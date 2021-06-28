@@ -9,6 +9,9 @@ OPT ?= -Og
 # Set to 0 to suppress dirty submodule warning
 CHECK_DIRTY_SUBMODULE ?= 1
 
+# Set to 0 to skip tools check
+CHECK_TOOLS ?= 1
+
 # Set to 1 to enable 16MB external flash support
 LARGE_FLASH ?= 0
 
@@ -37,8 +40,6 @@ PYTHON3 ?= /usr/bin/env python3
 # Build path
 BUILD_DIR ?= build
 
-
-
 # Common C sources
 C_SOURCES +=  \
 retro-go-stm32/components/lupng/lupng.c \
@@ -55,14 +56,15 @@ Core/Src/retro-go/bitmaps/header_gg.c \
 Core/Src/retro-go/bitmaps/header_col.c \
 Core/Src/retro-go/bitmaps/header_sg1000.c \
 Core/Src/retro-go/bitmaps/header_pce.c \
+Core/Src/retro-go/bitmaps/header_gw.c \
 Core/Src/retro-go/bitmaps/logo_gb.c \
 Core/Src/retro-go/bitmaps/logo_nes.c \
 Core/Src/retro-go/bitmaps/logo_sms.c \
 Core/Src/retro-go/bitmaps/logo_gg.c \
 Core/Src/retro-go/bitmaps/logo_col.c \
 Core/Src/retro-go/bitmaps/logo_sg1000.c \
-Core/Src/retro-go/bitmaps/logo_pce.c
-
+Core/Src/retro-go/bitmaps/logo_pce.c \
+Core/Src/retro-go/bitmaps/logo_gw.c
 
 # Version and URL for the STM32CubeH7 SDK
 SDK_VERSION ?= v1.8.0
@@ -70,8 +72,6 @@ SDK_URL ?= https://raw.githubusercontent.com/STMicroelectronics/STM32CubeH7
 
 # Local path for the SDK
 SDK_DIR ?= Drivers
-
-
 
 # SDK C sources
 SDK_C_SOURCES =  \
@@ -107,7 +107,6 @@ Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_tim_ex.c \
 Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_tim.c \
 Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_wwdg.c \
 Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal.c \
-
 
 # SDK ASM sources
 SDK_ASM_SOURCES =  \
@@ -170,17 +169,19 @@ PREFIX = arm-none-eabi-
 # The gcc compiler bin path can be either defined in make command via GCC_PATH variable (> make GCC_PATH=xxx)
 # either it can be added to the PATH environment variable.
 ifdef GCC_PATH
-CC  = $(GCC_PATH)/$(PREFIX)gcc
-AS  = $(GCC_PATH)/$(PREFIX)gcc -x assembler-with-cpp
-CP  = $(GCC_PATH)/$(PREFIX)objcopy
-SZ  = $(GCC_PATH)/$(PREFIX)size
-GDB = $(GCC_PATH)/$(PREFIX)gdb
+CC   = $(GCC_PATH)/$(PREFIX)gcc
+AS   = $(GCC_PATH)/$(PREFIX)gcc -x assembler-with-cpp
+CP   = $(GCC_PATH)/$(PREFIX)objcopy
+SZ   = $(GCC_PATH)/$(PREFIX)size
+GDB  = $(GCC_PATH)/$(PREFIX)gdb
+DUMP = $(GCC_PATH)/$(PREFIX)objdump
 else
-CC  = $(PREFIX)gcc
-AS  = $(PREFIX)gcc -x assembler-with-cpp
-CP  = $(PREFIX)objcopy
-SZ  = $(PREFIX)size
-GDB = $(PREFIX)gdb
+CC   = $(PREFIX)gcc
+AS   = $(PREFIX)gcc -x assembler-with-cpp
+CP   = $(PREFIX)objcopy
+SZ   = $(PREFIX)size
+GDB  = $(PREFIX)gdb
+DUMP = $(PREFIX)objdump
 endif
 
 HEX   = $(CP) -O ihex
@@ -227,6 +228,7 @@ C_INCLUDES +=  \
 -ICore/Inc/porting/nes \
 -ICore/Inc/porting/smsplusgx \
 -ICore/Inc/porting/pce \
+-ICore/Inc/porting/gw \
 -ICore/Inc/retro-go \
 -IDrivers/STM32H7xx_HAL_Driver/Inc \
 -IDrivers/STM32H7xx_HAL_Driver/Inc/Legacy \
@@ -277,8 +279,9 @@ GNUBOY_OBJECTS = $(addprefix $(BUILD_DIR)/gnuboy/,$(notdir $(GNUBOY_C_SOURCES:.c
 NES_OBJECTS = $(addprefix $(BUILD_DIR)/nes/,$(notdir $(NES_C_SOURCES:.c=.o)))
 SMSPLUSGX_OBJECTS = $(addprefix $(BUILD_DIR)/smsplusgx/,$(notdir $(SMSPLUSGX_C_SOURCES:.c=.o)))
 PCE_OBJECTS = $(addprefix $(BUILD_DIR)/pce/,$(notdir $(PCE_C_SOURCES:.c=.o)))
+GW_OBJECTS = $(addprefix $(BUILD_DIR)/gw/,$(notdir $(GW_C_SOURCES:.c=.o)))
 
-vpath %.c $(sort $(dir $(C_SOURCES) $(NES_C_SOURCES) $(GNUBOY_C_SOURCES) $(SMSPLUSGX_C_SOURCES) $(PCE_C_SOURCES) $(SDK_C_SOURCES)))
+vpath %.c $(sort $(dir $(C_SOURCES) $(NES_C_SOURCES) $(GNUBOY_C_SOURCES) $(SMSPLUSGX_C_SOURCES) $(PCE_C_SOURCES) $(GW_C_SOURCES) $(SDK_C_SOURCES)))
 # list of ASM program objects
 OBJECTS += $(addprefix $(BUILD_DIR)/,$(notdir $(SDK_ASM_SOURCES:.s=.o)))
 vpath %.s $(sort $(dir $(SDK_ASM_SOURCES)))
@@ -303,7 +306,7 @@ Core/Inc/githash.h: FORCE | $(BUILD_DIR)
 # Run parse_roms.py to generate information about the roms
 $(BUILD_DIR)/rom_files.txt: FORCE | $(BUILD_DIR)
 	$(V)$(ECHO) [ BASH ] Checking for updated roms
-	$(V)./update_rom_files.sh build/rom_files.txt roms/gb roms/nes roms/sms roms/gg roms/col roms/pce roms/sg
+	$(V)./update_rom_files.sh build/rom_files.txt roms/gb roms/nes roms/sms roms/gg roms/pce roms/gw roms/col roms/sg
 
 $(BUILD_DIR)/roms.a: $(BUILD_DIR)/rom_files.txt parse_roms.py
 	$(V)$(ECHO) [ PYTHON3 ] $(notdir $<)
@@ -330,13 +333,40 @@ CheckDirtySubmodules:
 endif
 .PHONY: CheckDirtySubmodules
 
+ifeq (${CHECK_TOOLS},1)
+CheckTools:
+	$(V)$(CC) -v 2>&1 | grep "gcc version 1[01]" > /dev/null || \
+		( \
+			echo -e "\n\n\nPlease use GCC version 10\n\n\nYou are using:" && \
+			$(CC) -v 2>&1 | grep "gcc version" ; \
+			echo -e "\n\n\n" && \
+			exit 1 \
+		)
+
+	$(V)$(CP) --info | grep "elf32-littlearm" > /dev/null || \
+		( \
+			echo -e "\n\n\nobjcopy seems to be missing or not suport elf32-littlearm. Please install binutils.\n\n\n" && \
+			exit 1 \
+		)
+
+	$(V)$(DUMP) --help | grep "armv7e-m" > /dev/null || \
+		( \
+			echo -e "\n\n\nobjdump seems to be missing or not suport armv7e-m. Please install binutils.\n\n\n" && \
+			exit 1 \
+		)
+
+else
+CheckTools:
+endif
+.PHONY: CheckTools
+
 $(BUILD_DIR)/%.o: %.s Makefile.common Makefile $(BUILD_DIR)/config.h | $(BUILD_DIR) CheckDirtySubmodules
 	$(V)$(ECHO) [ AS ] $(notdir $<)
 	$(V)$(AS) -c $(CFLAGS) $< -o $@
 
-$(BUILD_DIR)/$(TARGET).elf: $(OBJECTS) $(NES_OBJECTS) $(GNUBOY_OBJECTS) $(SMSPLUSGX_OBJECTS) $(PCE_OBJECTS) Makefile.common Makefile $(LDSCRIPT)
+$(BUILD_DIR)/$(TARGET).elf: CheckTools $(OBJECTS) $(NES_OBJECTS) $(GNUBOY_OBJECTS) $(SMSPLUSGX_OBJECTS) $(PCE_OBJECTS) $(GW_OBJECTS) Makefile.common Makefile $(LDSCRIPT)
 	$(V)$(ECHO) [ LD ] $(notdir $@)
-	$(V)$(CC) $(OBJECTS) $(NES_OBJECTS) $(GNUBOY_OBJECTS) $(SMSPLUSGX_OBJECTS) $(PCE_OBJECTS) $(LDFLAGS) -o $@
+	$(V)$(CC) $(OBJECTS) $(NES_OBJECTS) $(GNUBOY_OBJECTS) $(SMSPLUSGX_OBJECTS) $(PCE_OBJECTS) $(GW_OBJECTS) $(LDFLAGS) -o $@
 	$(V)$(SZ) $@
 	$(V)./size.sh $@
 
@@ -359,7 +389,11 @@ $(BUILD_DIR)/smsplusgx/%.o: %.c Makefile Makefile.common $(SDK_HEADERS) $(BUILD_
 $(BUILD_DIR)/pce/%.o: %.c Makefile Makefile.common $(SDK_HEADERS) $(BUILD_DIR)/config.h | $(BUILD_DIR) CheckDirtySubmodules
 	$(V)$(ECHO) [ CC pce ] $(notdir $<)
 	$(V)$(CC) -c $(CFLAGS) -Wa,-a,-ad,-alms=$(BUILD_DIR)/pce/$(notdir $(<:.c=.lst)) $< -o $@
-	
+
+$(BUILD_DIR)/gw/%.o: %.c Makefile Makefile.common $(SDK_HEADERS) $(BUILD_DIR)/config.h | $(BUILD_DIR) CheckDirtySubmodules
+	$(V)$(ECHO) [ CC gw ] $(notdir $<)
+	$(V)$(CC) -c $(CFLAGS) -Wa,-a,-ad,-alms=$(BUILD_DIR)/gw/$(notdir $(<:.c=.lst)) $< -o $@
+
 $(BUILD_DIR):
 	$(V)mkdir $@
 	$(V)mkdir $@/core
@@ -367,6 +401,7 @@ $(BUILD_DIR):
 	$(V)mkdir $@/gnuboy
 	$(V)mkdir $@/smsplusgx
 	$(V)mkdir $@/pce
+	$(V)mkdir $@/gw
 
 #######################################
 # Flashing

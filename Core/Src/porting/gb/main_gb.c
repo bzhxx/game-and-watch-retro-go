@@ -486,7 +486,7 @@ void pcm_submit() {
     } else {
         for (int i = 0; i < AUDIO_BUFFER_LENGTH_GB; i++) {
             int32_t sample = pcm.buf[i];
-            audiobuffer_dma[i + offset] = (sample * factor) >> 16;
+            audiobuffer_dma[i + offset] = (sample * factor) >> 8;
         }
     }
 }
@@ -496,6 +496,9 @@ rg_app_desc_t * init(uint8_t load_state)
 {
     odroid_system_init(ODROID_APPID_GB, AUDIO_SAMPLE_RATE);
     odroid_system_emu_init(&LoadState, &SaveState, &netplay_callback);
+
+    // bzhxx : fix LCD glitch at the start by cleaning up the buffer emulator
+    memset(emulator_framebuffer, 0x0, sizeof(emulator_framebuffer));
 
     // Hack: Use the same buffer twice
     update1.buffer = emulator_framebuffer;
