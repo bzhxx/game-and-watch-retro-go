@@ -281,6 +281,10 @@ SMSPLUSGX_OBJECTS = $(addprefix $(BUILD_DIR)/smsplusgx/,$(notdir $(SMSPLUSGX_C_S
 PCE_OBJECTS = $(addprefix $(BUILD_DIR)/pce/,$(notdir $(PCE_C_SOURCES:.c=.o)))
 GW_OBJECTS = $(addprefix $(BUILD_DIR)/gw/,$(notdir $(GW_C_SOURCES:.c=.o)))
 
+<<<<<<< HEAD
+=======
+
+>>>>>>> 0e3a5180684d0f744386d70b3a6dd1eabb1a9350
 vpath %.c $(sort $(dir $(C_SOURCES) $(NES_C_SOURCES) $(GNUBOY_C_SOURCES) $(SMSPLUSGX_C_SOURCES) $(PCE_C_SOURCES) $(GW_C_SOURCES) $(SDK_C_SOURCES)))
 # list of ASM program objects
 OBJECTS += $(addprefix $(BUILD_DIR)/,$(notdir $(SDK_ASM_SOURCES:.s=.o)))
@@ -306,7 +310,11 @@ Core/Inc/githash.h: FORCE | $(BUILD_DIR)
 # Run parse_roms.py to generate information about the roms
 $(BUILD_DIR)/rom_files.txt: FORCE | $(BUILD_DIR)
 	$(V)$(ECHO) [ BASH ] Checking for updated roms
+<<<<<<< HEAD
 	$(V)./update_rom_files.sh build/rom_files.txt roms/gb roms/nes roms/sms roms/gg roms/pce roms/gw roms/col roms/sg
+=======
+	$(V)./update_rom_files.sh build/rom_files.txt roms/gb roms/nes roms/sms roms/gg roms/pce roms/gw
+>>>>>>> 0e3a5180684d0f744386d70b3a6dd1eabb1a9350
 
 $(BUILD_DIR)/roms.a: $(BUILD_DIR)/rom_files.txt parse_roms.py
 	$(V)$(ECHO) [ PYTHON3 ] $(notdir $<)

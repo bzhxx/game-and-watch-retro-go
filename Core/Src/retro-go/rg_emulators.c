@@ -18,6 +18,7 @@
 #include "main_gw.h"
 
 // Increase when adding new emulators
+<<<<<<< HEAD
 #define MAX_EMULATORS 8
 static retro_emulator_t emulators[MAX_EMULATORS];
 static int emulators_count = 0;
@@ -404,6 +405,13 @@ void emulator_start(retro_emulator_file_t *file, bool load_state)
         else
         if (! strcmp(emu->system_name, "Sega SG-1000")) app_main_smsplusgx(load_state, SMSPLUSGX_ENGINE_SG1000);
         else                                            app_main_smsplusgx(load_state, SMSPLUSGX_ENGINE_OTHERS);
+#endif
+    } else if(strcmp(emu->system_name, "Game & Watch") == 0 ) {
+#ifdef ENABLE_EMULATOR_GW
+        memcpy(&__RAM_EMU_START__, &_OVERLAY_GW_LOAD_START, (size_t)&_OVERLAY_GW_SIZE);
+        memset(&_OVERLAY_GW_BSS_START, 0x0, (size_t)&_OVERLAY_GW_BSS_SIZE);
+        SCB_CleanDCache_by_Addr((uint32_t *)&__RAM_EMU_START__, (size_t)&_OVERLAY_GW_SIZE);
+        app_main_gw(load_state);
 #endif
     } else if(strcmp(emu->system_name, "Game & Watch") == 0 ) {
 #ifdef ENABLE_EMULATOR_GW
