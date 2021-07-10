@@ -16,8 +16,11 @@
 /* G&W system support */
 #include "gw_system.h"
 
-/* acces to internals for debug purpose */
+/* access to internals for debug purpose */
 #include "sm510.h"
+
+/* Uncoment to enable debug menu in overlay */
+//#define GW_EMU_DEBUG_OVERLAY
 
 #define ODROID_APPID_GW 6
 
@@ -95,7 +98,7 @@ static void gw_sound_submit()
     {
         for (int i = 0; i < GW_AUDIO_BUFFER_LENGTH; i++)
         {
-            audiobuffer_dma[i + offset] = (factor) * (gw_audio_buffer[i] << 6);
+            audiobuffer_dma[i + offset] = (factor) * (gw_audio_buffer[i] << 4);
         }
     }
 
@@ -103,7 +106,6 @@ static void gw_sound_submit()
 }
 
 /************************ Debug function in overlay START *******************************/
-static bool debug_enable = false;
 
 /* performance monitoring */
 /* Emulator loop monitoring
@@ -146,6 +148,8 @@ static void enable_dwt_cycles()
 static void gw_debug_bar()
 {
 
+#ifdef GW_EMU_DEBUG_OVERLAY
+
     static bool debug_init_done = false;
 
     if (!debug_init_done)
@@ -175,6 +179,8 @@ static void gw_debug_bar()
         sprintf(debugMsg, "%04dus EMU:%04dus FX:%04dus %d%%+%d", loop_duration_us, proc_duration_us, blit_duration_us, busy_percent, overflow_count);
 
     odroid_overlay_draw_text(0, 0, GW_SCREEN_WIDTH, debugMsg, C_GW_YELLOW, C_GW_RED);
+
+#endif
 }
 /************************ Debug function in overlay END ********************************/
 
@@ -214,7 +220,8 @@ int app_main_gw(uint8_t load_state)
     printf("Main emulator loop start\n");
 
     /* check if we to have to load state */
-    if (load_state != 0) gw_system_LoadState(NULL);
+    if (load_state != 0)
+        gw_system_LoadState(NULL);
 
     clear_dwt_cycles();
 
@@ -236,7 +243,6 @@ int app_main_gw(uint8_t load_state)
             odroid_dialog_choice_t options[] = {
                 ODROID_DIALOG_CHOICE_LAST};
             odroid_overlay_game_menu(options);
-            //debug_enable = !debug_enable;
         }
 
         if (power_pressed != joystick.values[ODROID_INPUT_POWER])
@@ -264,7 +270,7 @@ int app_main_gw(uint8_t load_state)
         if (!is_lcd_swap_pending())
         {
             gw_system_blit(lcd_get_active_buffer());
-            if (debug_enable) gw_debug_bar();
+            gw_debug_bar();
             lcd_swap();
 
             /* get how many cycles have been spent in graphics rendering */
