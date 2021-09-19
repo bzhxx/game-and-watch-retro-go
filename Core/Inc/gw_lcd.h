@@ -34,6 +34,7 @@ void lcd_backlight_on();
 void lcd_backlight_off();
 void lcd_swap(void);
 void lcd_sync(void);
+uint32_t is_lcd_swap_pending();
 void* lcd_get_active_buffer(void);
 void* lcd_get_inactive_buffer(void);
 void lcd_set_buffers(uint16_t *buf1, uint16_t *buf2);
