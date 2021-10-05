@@ -4,12 +4,18 @@
 #include "main.h"
 #include "bilinear.h"
 #include "gw_lcd.h"
+#include "gw_flash.h"
 #include "gw_linker.h"
 #include "gw_buttons.h"
 #include "shared.h"
 #include "rom_manager.h"
 #include "common.h"
 #include "main_smsplusgx.h"
+#include <assert.h>
+
+
+#include "lz4_depack.h"
+#include "lzma.h"
 
 #define APP_ID 3
 
@@ -45,29 +51,105 @@ unsigned int crc32_le(unsigned int crc, unsigned char const * buf,unsigned int l
 
 // --- MAIN
 
+static uint8_t ROMinRAM_DATA[60*1024] __attribute__((section ("._itcram")));
+
 static int
 load_rom_from_flash(uint8_t emu_engine)
 {
     static uint8 sram[0x8000];
-    cart.rom = (uint8 *)ROM_DATA;
-    cart.size = ROM_DATA_LENGTH;
+
+    /* check if it's compressed */
+
+    if (strcmp(ROM_EXT, "lzma") == 0)
+    {
+        /* it can fit in ITC RAM */
+        if ((emu_engine == SMSPLUSGX_ENGINE_COLECO) || (emu_engine == SMSPLUSGX_ENGINE_SG1000))
+        {
+            size_t n_decomp_bytes;
+            n_decomp_bytes = lzma_inflate((uint8 *)ROMinRAM_DATA, sizeof(ROMinRAM_DATA), (uint8 *)ROM_DATA, ROM_DATA_LENGTH);
+            cart.rom = (uint8 *)ROMinRAM_DATA;
+            cart.size = (uint32_t)n_decomp_bytes;
+        }
+
+        /* it can't fit in ITC RAM */
+        else
+        {
+
+
+            assert ( (&__SMSFLASH_END__ - &__SMSFLASH_START__) > 0);
+
+            /* check header  */
+            assert(memcmp((uint8 *)ROM_DATA, "SMS+", 4) == 0);
+
+            unsigned int nb_banks = 0;
+            unsigned int lzma_bank_size = 0;
+            unsigned int lzma_bank_offset = 0;
+            unsigned int uncompressed_rom_size = 0;
+
+            memcpy(&nb_banks, &ROM_DATA[4], sizeof(nb_banks));
+
+            lzma_bank_offset = 4 + 4 + 4 * nb_banks;
+
+            for (int i = 0; i < nb_banks; i++)
+            {
+
+                memcpy(&lzma_bank_size, &ROM_DATA[8 + 4 * i], sizeof(lzma_bank_size));
+
+                /* uncompressed in lcd framebuffer */
+                size_t n_decomp_bytes;
+                n_decomp_bytes = lzma_inflate((uint8 *)lcd_get_active_buffer(), 2 * 320 * 240, &ROM_DATA[lzma_bank_offset], lzma_bank_size);
+
+                assert (  (&__SMSFLASH_END__ - &__SMSFLASH_START__) >= ( (uint32_t)n_decomp_bytes + uncompressed_rom_size) );
+
+                int diff = memcmp((void *)(&__SMSFLASH_START__ + uncompressed_rom_size), (uint8 *)lcd_get_active_buffer(), n_decomp_bytes);
+                if (diff != 0)
+                {
+
+                    //printf("bank:%i/%i size:%lu offset:%lu decomp:%u\n",i,nb_banks,lzma_bank_size,lzma_bank_offset,n_decomp_bytes);
+                    OSPI_DisableMemoryMappedMode();
+
+                    OSPI_EraseSync((&__SMSFLASH_START__ - &__EXTFLASH_BASE__)+uncompressed_rom_size, (uint32_t)n_decomp_bytes);
+                    OSPI_Program((&__SMSFLASH_START__ - &__EXTFLASH_BASE__)+uncompressed_rom_size, (uint8 *)lcd_get_active_buffer(), (uint32_t)n_decomp_bytes);
+
+                    OSPI_EnableMemoryMappedMode();
+                }
+
+                lzma_bank_offset += lzma_bank_size;
+                uncompressed_rom_size += (uint32_t)n_decomp_bytes;
+
+            }
+
+            /* set the rom pointer and size */
+            cart.rom = &__SMSFLASH_START__;     // (uint8 *)ROM_DATA;
+            cart.size = uncompressed_rom_size; //ROM_DATA_LENGTH;
+        }
+    }
+    else
+    {
+        cart.rom = (uint8 *)ROM_DATA;
+        cart.size = ROM_DATA_LENGTH;
+    }
+
     cart.sram = sram;
     cart.pages = cart.size / 0x4000;
     cart.crc = crc32_le(0, cart.rom, cart.size);
     cart.loaded = 1;
 
-    if (emu_engine == SMSPLUSGX_ENGINE_COLECO) {
-      option.console = 6; // Force Coleco
-    } else
-    if (emu_engine == SMSPLUSGX_ENGINE_SG1000) {
-      option.console = 5; // Force SG1000
+    if (emu_engine == SMSPLUSGX_ENGINE_COLECO)
+    {
+        option.console = 6; // Force Coleco
+    }
+    else if (emu_engine == SMSPLUSGX_ENGINE_SG1000)
+    {
+        option.console = 5; // Force SG1000
     }
     set_config();
     printf("%s: OK. cart.size=%d, cart.crc=%#010lx\n", __func__, (int)cart.size, cart.crc);
 
-    if (sms.console == CONSOLE_COLECO) {
-      extern const unsigned char ColecoVision_BIOS[];
-      coleco.rom = (uint8*)ColecoVision_BIOS;
+    if (sms.console == CONSOLE_COLECO)
+    {
+        extern const unsigned char ColecoVision_BIOS[];
+        coleco.rom = (uint8 *)ColecoVision_BIOS;
     }
     return 1;
 }

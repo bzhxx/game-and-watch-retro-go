@@ -84,10 +84,11 @@ __RAM_EMU_START__   = __RAM_CORE_START__ + __RAM_CORE_LENGTH__;
 
 __RAM_EMU_END__     = __RAM_EMU_START__ + __RAM_EMU_LENGTH__;
 
-/* saveflash.ld sets __SAVEFLASH_LENGTH__ */
+/* saveflash.ld & smsflash.ld sets __SAVEFLASH_LENGTH__ and __SMSFLASH_LENGTH__ */
 INCLUDE build/saveflash.ld
+INCLUDE build/smsflash.ld
 
-/* saveflash.ld sets __SAVEFLASH_LENGTH__ */
+/* reserved space for configuration settings store */
 __CONFIGFLASH_LENGTH__ = 4096;
 
 /****
@@ -103,7 +104,12 @@ __CONFIGFLASH_LENGTH__ = 4096;
  *            |   Executable emulator data and   |
  *            |         constant ROM data        |
  *            |                                  |
- *            +----------------------------------+  __EXTFLASH_END__  __SAVEFLASH_START__
+ *            +----------------------------------+  __EXTFLASH_END__ __SMSFLASH_START__
+ *            |                                  |
+ *            |          Reserved space          |
+ *            |    to decompress GG & SMS Roms   |
+ *            |                                  |
+ *            +----------------------------------+  __SMSFLASH_END__  __SAVEFLASH_START__
  *            |                                  |
  *            |          Save States             |
  *            |                                  |
@@ -114,9 +120,22 @@ __CONFIGFLASH_LENGTH__ = 4096;
  *            |                                  |
  *            +----------------------------------+  __CONFIGFLASH_END__
  */
+
+/* old config */
+ /*
 __EXTFLASH_LENGTH__ = __EXTFLASH_TOTAL_LENGTH__ - (__CONFIGFLASH_LENGTH__ + __SAVEFLASH_LENGTH__);
 __EXTFLASH_END__ = __EXTFLASH_START__ + __EXTFLASH_LENGTH__;
 __SAVEFLASH_START__ = __EXTFLASH_END__;
+__SAVEFLASH_END__   = __SAVEFLASH_START__ + __SAVEFLASH_LENGTH__;
+__CONFIGFLASH_START__ = __SAVEFLASH_END__;
+__CONFIGFLASH_END__   = __CONFIGFLASH_START__ + __CONFIGFLASH_LENGTH__;
+*/
+
+__EXTFLASH_LENGTH__ = __EXTFLASH_TOTAL_LENGTH__ - (__CONFIGFLASH_LENGTH__ + __SAVEFLASH_LENGTH__ + __SMSFLASH_LENGTH__);
+__EXTFLASH_END__ = __EXTFLASH_START__ + __EXTFLASH_LENGTH__;
+__SMSFLASH_START__ = __EXTFLASH_END__;
+__SMSFLASH_END__   = __SMSFLASH_START__ + __SMSFLASH_LENGTH__;
+__SAVEFLASH_START__ = __SMSFLASH_END__;
 __SAVEFLASH_END__   = __SAVEFLASH_START__ + __SAVEFLASH_LENGTH__;
 __CONFIGFLASH_START__ = __SAVEFLASH_END__;
 __CONFIGFLASH_END__   = __CONFIGFLASH_START__ + __CONFIGFLASH_LENGTH__;
@@ -138,6 +157,7 @@ MEMORY
   /* FLASH */
   FLASH    (xr ) : ORIGIN = __INTFLASH__,          LENGTH =  __FLASH_LENGTH__
   EXTFLASH (xr ) : ORIGIN = __EXTFLASH_START__,  LENGTH = __EXTFLASH_LENGTH__
+  EXTFLASH_SMS (xr ) : ORIGIN = __SMSFLASH_START__,  LENGTH = __SMSFLASH_LENGTH__
   SAVEFLASH(xr ) : ORIGIN = __SAVEFLASH_START__, LENGTH = __SAVEFLASH_LENGTH__
   CONFIGFLASH(xr ) : ORIGIN = __CONFIGFLASH_START__, LENGTH = __CONFIGFLASH_LENGTH__
 }

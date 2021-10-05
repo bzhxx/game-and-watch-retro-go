@@ -6,6 +6,7 @@ import subprocess
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import List
+from struct import pack
 
 try:
     from tqdm import tqdm
@@ -57,6 +58,7 @@ SAVE_SIZES = {
 # TODO: Find a better way to find this before building
 MAX_COMPRESSED_NES_SIZE = 0x00081000
 MAX_COMPRESSED_PCE_SIZE = 0x00049000
+MAX_COMPRESSED_SG_COL_SIZE = 60 * 1024
 
 """
 All ``compress_*`` functions must be decorated ``@COMPRESSIONS`` and have the
@@ -272,6 +274,7 @@ class ROM:
 
 
 class ROMParser:
+    global sms_reserved_flash_size
     def find_roms(self, system_name: str, folder: str, extension: str) -> [ROM]:
         extension = extension.lower()
         ext = extension
@@ -395,6 +398,7 @@ class ROMParser:
 
     def _compress_rom(self, variable_name, rom, compress_gb_speed=False, compress=None):
         """This will create a compressed rom file next to the original rom."""
+        global sms_reserved_flash_size
 
         if compress is None:
             compress = "lz4"
@@ -425,6 +429,38 @@ class ROMParser:
                 return
             compressed_data = compress(data)
             output_file.write_bytes(compressed_data)
+
+        elif variable_name in ["col_system","sg1000_system"] :  # COL or SG
+            if rom.path.stat().st_size > MAX_COMPRESSED_SG_COL_SIZE:
+                print(
+                    f"INFO: {rom.name} is too large to compress, skipping compression!"
+                )
+                return
+            compressed_data = compress(data)
+            output_file.write_bytes(compressed_data)
+
+        elif variable_name in ["sms_system","gg_system"]:  # GG or SMS
+
+            BANK_SIZE = 128*1024
+            banks = [data[i : i + BANK_SIZE] for i in range(0, len(data), BANK_SIZE)]
+            compressed_banks = [compress(bank) for bank in banks]
+
+            # add header + number of banks + banks(offset)
+            output_data=[]
+            output_data.append( b'SMS+')
+            output_data.append(pack("<l", len(compressed_banks)))
+
+            for compressed_bank in compressed_banks:
+                output_data.append(pack("<l", len(compressed_bank)))
+
+            # Reassemble all banks back into one file
+            for compressed_bank in compressed_banks:
+                output_data.append(compressed_bank)
+
+            output_data = b"".join(output_data)
+
+            output_file.write_bytes(output_data)
+
         elif "gb_system" in variable_name:  # GB/GBC
             BANK_SIZE = 16384
             banks = [data[i : i + BANK_SIZE] for i in range(0, len(data), BANK_SIZE)]
@@ -488,8 +524,11 @@ class ROMParser:
         compress_gb_speed: bool = False,
     ) -> int:
         roms_raw = []
+
         for e in extensions:
             roms_raw += self.find_roms(system_name, folder, e)
+
+        roms_uncompressed = roms_raw
 
         def find_compressed_roms():
             if not compress:
@@ -567,7 +606,12 @@ class ROMParser:
                 )
             )
 
-        return total_save_size, total_rom_size
+        larger_rom_size = 0
+        for r in roms_uncompressed:
+            if r.ext in ["gg","sms"]:
+                 if larger_rom_size < r.size: larger_rom_size = r.size
+
+        return total_save_size, total_rom_size, larger_rom_size
 
     def write_if_changed(self, path: str, data: str):
         path = Path(path)
@@ -580,9 +624,11 @@ class ROMParser:
     def parse(self, args):
         total_save_size = 0
         total_rom_size = 0
+        sms_larger_rom_size = 0
+
         build_config = ""
 
-        save_size, rom_size = self.generate_system(
+        save_size, rom_size, larger_rom_size = self.generate_system(
             "Core/Src/retro-go/gb_roms.c",
             "Nintendo Gameboy",
             "gb_system",
@@ -596,82 +642,90 @@ class ROMParser:
         total_rom_size += rom_size
         build_config += "#define ENABLE_EMULATOR_GB\n" if rom_size > 0 else ""
 
-        save_size, rom_size = self.generate_system(
+        save_size, rom_size, larger_rom_size = self.generate_system(
             "Core/Src/retro-go/nes_roms.c",
             "Nintendo Entertainment System",
             "nes_system",
             "nes",
             ["nes"],
             "SAVE_NES_",
-            args.compress,
+            "lzma",
         )
         total_save_size += save_size
         total_rom_size += rom_size
         build_config += "#define ENABLE_EMULATOR_NES\n" if rom_size > 0 else ""
 
-        save_size, rom_size = self.generate_system(
+        save_size, rom_size, larger_rom_size = self.generate_system(
             "Core/Src/retro-go/sms_roms.c",
             "Sega Master System",
             "sms_system",
             "sms",
             ["sms"],
             "SAVE_SMS_",
+            "lzma",
         )
         total_save_size += save_size
         total_rom_size += rom_size
+
+        if sms_larger_rom_size < larger_rom_size : sms_larger_rom_size = larger_rom_size
+
         build_config += "#define ENABLE_EMULATOR_SMS\n" if rom_size > 0 else ""
 
-        save_size, rom_size = self.generate_system(
+        save_size, rom_size, larger_rom_size = self.generate_system(
             "Core/Src/retro-go/gg_roms.c",
             "Sega Game Gear",
             "gg_system",
             "gg",
             ["gg"],
             "SAVE_GG_",
+            "lzma",
         )
         total_save_size += save_size
         total_rom_size += rom_size
+        if sms_larger_rom_size < larger_rom_size : sms_larger_rom_size = larger_rom_size
         build_config += "#define ENABLE_EMULATOR_GG\n" if rom_size > 0 else ""
 
-        save_size, rom_size = self.generate_system(
+        save_size, rom_size, larger_rom_size = self.generate_system(
             "Core/Src/retro-go/col_roms.c",
             "Colecovision",
             "col_system",
             "col",
             ["col"],
             "SAVE_COL_",
+            "lzma",
         )
         total_save_size += save_size
         total_rom_size += rom_size
         build_config += "#define ENABLE_EMULATOR_COL\n" if rom_size > 0 else ""
 
-        save_size, rom_size = self.generate_system(
+        save_size, rom_size, larger_rom_size = self.generate_system(
             "Core/Src/retro-go/sg1000_roms.c",
             "Sega SG-1000",
             "sg1000_system",
             "sg",
             ["sg"],
             "SAVE_SG1000_",
+            "lzma",
         )
         total_save_size += save_size
         total_rom_size += rom_size
         build_config += "#define ENABLE_EMULATOR_SG1000\n" if rom_size > 0 else ""
 
-        save_size, rom_size = self.generate_system(
+        save_size, rom_size, larger_rom_size = self.generate_system(
             "Core/Src/retro-go/pce_roms.c",
             "PC Engine",
             "pce_system",
             "pce",
             ["pce"],
             "SAVE_PCE_",
-            args.compress,
+            "lzma",
         )
 
         total_save_size += save_size
         total_rom_size += rom_size
         build_config += "#define ENABLE_EMULATOR_PCE\n" if rom_size > 0 else ""
 
-        save_size, rom_size = self.generate_system(
+        save_size, rom_size, larger_rom_size = self.generate_system(
             "Core/Src/retro-go/gw_roms.c",
             "Game & Watch",
             "gw_system",
@@ -684,6 +738,7 @@ class ROMParser:
         build_config += "#define ENABLE_EMULATOR_GW\n" if rom_size > 0 else ""
 
         total_size = total_save_size + total_rom_size
+        total_size +=sms_larger_rom_size
 
         if total_size == 0:
             print(
@@ -692,7 +747,7 @@ class ROMParser:
             exit(-1)
 
         print(
-            f"Save data:\t{total_save_size} bytes\nROM data:\t{total_rom_size} bytes\n"
+            f"Save data:\t{total_save_size} bytes\nROM data:\t{total_rom_size} bytes\nSMS Cache:\t{sms_larger_rom_size} bytes\n"
             f"Total:\t\t{total_size} / {args.flash_size} bytes (plus some metadata)."
         )
         if total_size > args.flash_size:
@@ -700,9 +755,11 @@ class ROMParser:
             exit(-1)
 
         self.write_if_changed(
-            "build/saveflash.ld", f"__SAVEFLASH_LENGTH__ = {total_save_size};\n"
-        )
-        self.write_if_changed("build/config.h", build_config)
+            "build/saveflash.ld", f"__SAVEFLASH_LENGTH__ = {total_save_size};\n")
+        self.write_if_changed(
+            "build/smsflash.ld", f"__SMSFLASH_LENGTH__ = {sms_larger_rom_size};\n")
+        self.write_if_changed(
+            "build/config.h", build_config)
 
 
 if __name__ == "__main__":
