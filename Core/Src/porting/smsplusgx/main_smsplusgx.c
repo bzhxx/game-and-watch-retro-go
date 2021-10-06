@@ -53,6 +53,18 @@ unsigned int crc32_le(unsigned int crc, unsigned char const * buf,unsigned int l
 
 static uint8_t ROMinRAM_DATA[60*1024] __attribute__((section ("._itcram")));
 
+static const uint8_t IMG_DISKETTE[] = {
+    0x00, 0x00, 0x00, 0x3F, 0xFF, 0xE0, 0x7C, 0x00,
+    0x70, 0x7C, 0x03, 0x78, 0x7C, 0x03, 0x7C, 0x7C,
+    0x03, 0x7E, 0x7C, 0x00, 0x7E, 0x7F, 0xFF, 0xFE,
+    0x7F, 0xFF, 0xFE, 0x7F, 0xFF, 0xFE, 0x7F, 0xFF,
+    0xFE, 0x7F, 0xFF, 0xFE, 0x7F, 0xFF, 0xFE, 0x7E,
+    0x00, 0x7E, 0x7C, 0x00, 0x3E, 0x7C, 0x00, 0x3E,
+    0x7D, 0xFF, 0xBE, 0x7C, 0x00, 0x3E, 0x7C, 0x00,
+    0x3E, 0x7D, 0xFF, 0xBE, 0x7C, 0x00, 0x3E, 0x7C,
+    0x00, 0x3E, 0x3F, 0xFF, 0xFC, 0x00, 0x00, 0x00,
+};
+
 static int
 load_rom_from_flash(uint8_t emu_engine)
 {
@@ -92,8 +104,12 @@ load_rom_from_flash(uint8_t emu_engine)
 
             for (int i = 0; i < nb_banks; i++)
             {
-
+                wdog_refresh();
                 memcpy(&lzma_bank_size, &ROM_DATA[8 + 4 * i], sizeof(lzma_bank_size));
+                memset((uint8 *)lcd_get_inactive_buffer(),0x0,320*240*2);
+
+                uint16_t *dest = lcd_get_inactive_buffer();
+
 
                 /* uncompressed in lcd framebuffer */
                 size_t n_decomp_bytes;
@@ -104,14 +120,35 @@ load_rom_from_flash(uint8_t emu_engine)
                 int diff = memcmp((void *)(&__SMSFLASH_START__ + uncompressed_rom_size), (uint8 *)lcd_get_active_buffer(), n_decomp_bytes);
                 if (diff != 0)
                 {
+                   wdog_refresh(); 
+                   OSPI_DisableMemoryMappedMode();
 
-                    //printf("bank:%i/%i size:%lu offset:%lu decomp:%u\n",i,nb_banks,lzma_bank_size,lzma_bank_offset,n_decomp_bytes);
-                    OSPI_DisableMemoryMappedMode();
+                    /* display diskette during flash erase */
+                    uint16_t idx = 0;
+                    for(uint8_t i=0; i < 24; i++) {
+                        for(uint8_t j=0; j < 24; j++) {
+                            if(IMG_DISKETTE[idx / 8] & (1 << (7 - idx % 8))){
+                                dest[286 + j +  GW_LCD_WIDTH * (10 + i)] = 0xFFFF;
+                            }
+                            idx++;
+                        }
+                    }
 
+                    /* erase the trunk */
                     OSPI_EraseSync((&__SMSFLASH_START__ - &__EXTFLASH_BASE__)+uncompressed_rom_size, (uint32_t)n_decomp_bytes);
+
+                    /* erase diskette during flash program */
+                    for (short y = 0; y < 24; y++) {
+                    uint16_t *dest_row = &dest[(y + 10) * GW_LCD_WIDTH + 286];
+                    memset(dest_row,0x0 , 24 * sizeof(uint16_t));
+                    }
+                    
+                    /* program the trunk */
+                    wdog_refresh();
                     OSPI_Program((&__SMSFLASH_START__ - &__EXTFLASH_BASE__)+uncompressed_rom_size, (uint8 *)lcd_get_active_buffer(), (uint32_t)n_decomp_bytes);
 
                     OSPI_EnableMemoryMappedMode();
+                    wdog_refresh();
                 }
 
                 lzma_bank_offset += lzma_bank_size;
