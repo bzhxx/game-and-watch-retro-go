@@ -351,7 +351,7 @@ $(BUILD_DIR)/roms.a: $(BUILD_DIR)/rom_files.txt parse_roms.py
 	$(V)$(ECHO) [ PYTHON3 ] $(notdir $<)
 	$(V)$(PYTHON3) parse_roms.py --flash-size $(EXTFLASH_SIZE) $(COMPRESS_PARAM)
 
-$(BUILD_DIR)/config.h $(BUILD_DIR)/saveflash.ld &: $(BUILD_DIR)/roms.a
+$(BUILD_DIR)/config.h $(BUILD_DIR)/saveflash.ld $(BUILD_DIR)/smsflash.ld &: $(BUILD_DIR)/roms.a
 	$(V)/bin/sh -c true
 
 STM32H7B0VBTx_FLASH.ld: $(BUILD_DIR)/saveflash.ld $(BUILD_DIR)/smsflash.ld
