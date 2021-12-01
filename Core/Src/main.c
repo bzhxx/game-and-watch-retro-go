@@ -357,6 +357,27 @@ int main(void)
   /* USER CODE BEGIN 1 */
   uint8_t trigger_wdt_bsod = 0;
   uint8_t boot_mode = BOOT_MODE_APP;
+  uint8_t power_on_reset_flag = 0;
+  uint8_t low_power_reset_flag = 0;
+  uint8_t watchdog_reset_flag = 0;
+  uint8_t software_reset_flag = 0;
+  uint8_t pin_reset_flag = 0;
+  uint8_t brownout_reset_flag = 0;
+  uint8_t lcd_init_request =0;
+
+  power_on_reset_flag = (__HAL_RCC_GET_FLAG(RCC_FLAG_PORRST));
+  low_power_reset_flag = (__HAL_RCC_GET_FLAG(RCC_FLAG_LPWR1RST));
+  low_power_reset_flag |= (__HAL_RCC_GET_FLAG(RCC_FLAG_LPWR2RST));
+  watchdog_reset_flag = (__HAL_RCC_GET_FLAG(RCC_FLAG_WWDG1RST));
+  watchdog_reset_flag |= (__HAL_RCC_GET_FLAG(RCC_FLAG_IWDG1RST));
+  software_reset_flag = (__HAL_RCC_GET_FLAG(RCC_FLAG_SFTRST));
+
+  pin_reset_flag = (__HAL_RCC_GET_FLAG(RCC_FLAG_PINRST));
+  brownout_reset_flag = (__HAL_RCC_GET_FLAG(RCC_FLAG_BORRST));
+
+  lcd_init_request = power_on_reset_flag | low_power_reset_flag | brownout_reset_flag;
+  lcd_init_request = 1;
+  __HAL_RCC_CLEAR_RESET_FLAGS();
 
   for(int i = 0; i < 1000000; i++) {
     __NOP();
@@ -405,6 +426,15 @@ int main(void)
   // Reset the log write pointer
   log_idx = 0;
 
+  printf("---Start reason---\n");
+  if (power_on_reset_flag)  printf("Power on reset\n");
+  if (low_power_reset_flag)  printf("low Power reset\n");
+  if (watchdog_reset_flag)  printf("Watchdog reset\n");
+  if (software_reset_flag)  printf("Software reset\n");
+  if (pin_reset_flag)  printf("Pin reset\n");
+  if (brownout_reset_flag)  printf("Brownout reset\n");
+  printf("-----------------\n");
+
   /* USER CODE END 1 */
 
   /* MPU Configuration--------------------------------------------------------*/
@@ -450,7 +480,7 @@ int main(void)
   boot_buttons = buttons_get();
 
   // reduce the power consumption before lcd init
-  lcd_backlight_off();
+  //lcd_backlight_off();
 
   // Keep this
   for (int i = 0; i < 10; i++) {
@@ -458,12 +488,13 @@ int main(void)
       HAL_Delay(50);
   }
 
-  lcd_init(&hspi2, &hltdc);
+  if (lcd_init_request)
+    lcd_init(&hspi2, &hltdc);
+
 
   if (trigger_wdt_bsod) {
     BSOD(BSOD_WATCHDOG, 0, 0);
   }
-
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -1037,6 +1068,7 @@ static void MX_SPI2_Init(void)
   hspi2.Init.CLKPhase = SPI_PHASE_1EDGE;
   hspi2.Init.NSS = SPI_NSS_SOFT;
   hspi2.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_16;
+//  hspi2.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_8;
   hspi2.Init.FirstBit = SPI_FIRSTBIT_MSB;
   hspi2.Init.TIMode = SPI_TIMODE_DISABLE;
   hspi2.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
@@ -1177,13 +1209,13 @@ static void MX_GPIO_Init(void)
   HAL_GPIO_WritePin(GPIOE, GPIO_PIN_8, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_12, GPIO_PIN_SET);
+  //HAL_GPIO_WritePin(GPIOB, GPIO_PIN_12, GPIO_PIN_SET);
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOD, GPIO_PIN_8, GPIO_PIN_SET);
+ // HAL_GPIO_WritePin(GPIOD, GPIO_PIN_8, GPIO_PIN_SET);
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOD, GPIO_PIN_1|GPIO_PIN_4, GPIO_PIN_RESET);
+ // HAL_GPIO_WritePin(GPIOD, GPIO_PIN_1|GPIO_PIN_4, GPIO_PIN_RESET);
 
   /*Configure GPIO pins : GPIO_Speaker_enable_Pin PE8 */
   GPIO_InitStruct.Pin = GPIO_Speaker_enable_Pin|GPIO_PIN_8;
