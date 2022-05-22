@@ -18,8 +18,8 @@ typedef uint16_t pixel_t;
 #endif // GW_LCD_MODE_LUT8
 
 
-// To be shared between NES and GB. NES is larger.
-extern uint8_t emulator_framebuffer[(256 + 8 + 8) * 240]  __attribute__((section (".emulator_data")));
+// To be shared between NES and GB. NES is larger and used by other emulators as 64K RAM 
+extern uint8_t emulator_framebuffer[1024* 64]  __attribute__((section (".emulator_data")));
 
 
 // 0 => framebuffer1

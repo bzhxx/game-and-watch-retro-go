@@ -15,7 +15,7 @@ uint16_t framebuffer2[GW_LCD_WIDTH * GW_LCD_HEIGHT];
 uint16_t *fb1 = framebuffer1;
 uint16_t *fb2 = framebuffer2;
 
-uint8_t emulator_framebuffer[(256 + 8 + 8) * 240];
+uint8_t emulator_framebuffer[1024 * 64];
 
 extern LTDC_HandleTypeDef hltdc;
 

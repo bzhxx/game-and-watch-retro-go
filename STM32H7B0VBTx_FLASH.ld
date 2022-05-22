@@ -63,7 +63,8 @@ _Min_Stack_Size = 20 * 1024; /* required amount of stack */
 
 
 /* Useful for scripts */
-__NULLPTR_LENGTH__  = 0x100;
+/*__NULLPTR_LENGTH__  = 0x100;*/
+__NULLPTR_LENGTH__  = 0;
 __ITCMRAM_LENGTH__  = 64K;
 __DTCMRAM_LENGTH__  = 128K;
 __RAM_UC_LENGTH__   = 300K;
@@ -86,6 +87,8 @@ __RAM_EMU_END__     = __RAM_EMU_START__ + __RAM_EMU_LENGTH__;
 
 /* saveflash.ld sets __SAVEFLASH_LENGTH__ */
 INCLUDE build/saveflash.ld
+INCLUDE build/cacheflash.ld
+
 __CONFIGFLASH_LENGTH__ = 4096;
 __FBFLASH_LENGTH__ = ENABLE_SCREENSHOT ? ((320 * 240 * 2 + 4095) / 4096) * 4096 : 0;
 
@@ -102,7 +105,12 @@ __FBFLASH_LENGTH__ = ENABLE_SCREENSHOT ? ((320 * 240 * 2 + 4095) / 4096) * 4096 
  *            |   Executable emulator data and   |
  *            |         constant ROM data        |
  *            |                                  |
- *            +----------------------------------+  __EXTFLASH_END__  __SAVEFLASH_START__
+ *            +----------------------------------+  __EXTFLASH_END__ __CACHELASH_START__
+ *            |                                  |
+ *            |          Reserved space          |
+ *            |    to decompress Roms not        |
+ *            |         fitting in RAM           |
+ *            +----------------------------------+  __CACHELASH_END__  __SAVEFLASH_START__
  *            |                                  |
  *            |          Save States             |
  *            |                                  |
@@ -117,9 +125,11 @@ __FBFLASH_LENGTH__ = ENABLE_SCREENSHOT ? ((320 * 240 * 2 + 4095) / 4096) * 4096 
  *            |                                  |
  *            +----------------------------------+  __FBFLASH_END__
  */
-__EXTFLASH_LENGTH__ = __EXTFLASH_TOTAL_LENGTH__ - (__SAVEFLASH_LENGTH__ + __CONFIGFLASH_LENGTH__ + __FBFLASH_LENGTH__);
+__EXTFLASH_LENGTH__ = __EXTFLASH_TOTAL_LENGTH__ - (__CACHEFLASH_LENGTH__ + __SAVEFLASH_LENGTH__ + __CONFIGFLASH_LENGTH__ + __FBFLASH_LENGTH__);
 __EXTFLASH_END__ = __EXTFLASH_START__ + __EXTFLASH_LENGTH__;
-__SAVEFLASH_START__ = __EXTFLASH_END__;
+__CACHEFLASH_START__ = __EXTFLASH_END__;
+__CACHEFLASH_END__   = __CACHEFLASH_START__ + __CACHEFLASH_LENGTH__;
+__SAVEFLASH_START__ = __CACHEFLASH_END__;
 __SAVEFLASH_END__   = __SAVEFLASH_START__ + __SAVEFLASH_LENGTH__;
 __CONFIGFLASH_START__ = __SAVEFLASH_END__;
 __CONFIGFLASH_END__   = __CONFIGFLASH_START__ + __CONFIGFLASH_LENGTH__;
@@ -142,11 +152,12 @@ MEMORY
   AHBRAM   (xrw) : ORIGIN = 0x30000000, LENGTH =  __AHBRAM_LENGTH__
 
   /* FLASH */
-  FLASH    (xr ) : ORIGIN = __INTFLASH__,          LENGTH =  __FLASH_LENGTH__
-  EXTFLASH (xr ) : ORIGIN = __EXTFLASH_START__,  LENGTH = __EXTFLASH_LENGTH__
-  SAVEFLASH(xr ) : ORIGIN = __SAVEFLASH_START__, LENGTH = __SAVEFLASH_LENGTH__
+  FLASH      (xr ) : ORIGIN = __INTFLASH__,          LENGTH =  __FLASH_LENGTH__
+  EXTFLASH   (xr ) : ORIGIN = __EXTFLASH_START__,  LENGTH = __EXTFLASH_LENGTH__
+  CACHEFLASH (xr ) : ORIGIN = __CACHEFLASH_START__,  LENGTH = __CACHEFLASH_LENGTH__
+  SAVEFLASH  (xr ) : ORIGIN = __SAVEFLASH_START__, LENGTH = __SAVEFLASH_LENGTH__
   CONFIGFLASH(xr ) : ORIGIN = __CONFIGFLASH_START__, LENGTH = __CONFIGFLASH_LENGTH__
-  FBFLASH(xr ) : ORIGIN = __FBFLASH_START__, LENGTH = __FBFLASH_LENGTH__
+  FBFLASH    (xr ) : ORIGIN = __FBFLASH_START__, LENGTH = __FBFLASH_LENGTH__
 }
 
 
@@ -362,15 +373,45 @@ SECTIONS
   _OVERLAY_GW_BSS_SIZE = SIZEOF(.overlay_gw_bss);
 
 
+    .overlay_md __RAM_EMU_START__ : {
+    . = ALIGN(4);
+    __ram_emu_md_start__ = .;
+    build/md/*.o (.data. data* .text .text* .rodata .rodata*)
+    . = ALIGN(4);
+    _OVERLAY_MD_LOAD_END = .;
+  } AT> EXTFLASH
+  _OVERLAY_MD_LOAD_START = LOADADDR(.overlay_md);
+  _OVERLAY_MD_SIZE = SIZEOF(.overlay_md);
+
+  .overlay_md_bss _OVERLAY_MD_LOAD_END : {
+    . = ALIGN(4);
+    _OVERLAY_MD_BSS_START = .;
+    build/md/*.o (.bss .bss*)
+    . = ALIGN(4);
+    build/md/*.o (COMMON)
+    __ram_emu_md_end__ = .;
+    _OVERLAY_MD_BSS_END = .;
+    ASSERT(ABSOLUTE(_OVERLAY_MD_BSS_END) < __RAM_EMU_END__, "Error: MD BSS overflow");
+  }
+  _OVERLAY_MD_BSS_SIZE = SIZEOF(.overlay_md_bss);
+
+
   /* Place this symbol after the last overlay definition */
   .overlay_end : {
     __extflash_end__ = .;
   } AT> EXTFLASH
 
-  ._ram_space_check_pce : {
-    . = . + SIZEOF(.overlay_pce);
-    . = . + SIZEOF(.overlay_pce_bss);
+  ._ram_space_check_md : {
+    . = . + SIZEOF(.overlay_md);
+    . = . + SIZEOF(.overlay_md_bss);
   } >RAM_EMU
+
+  ._cacheflash (NOLOAD) :
+  {
+    __cacheflash_start__ = .;
+    *(.cacheflash)
+    __cacheflash_end__ = .;
+  } > CACHEFLASH
 
   ._saveflash (NOLOAD) :
   {
