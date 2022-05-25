@@ -164,6 +164,78 @@ LCD-Game-Emulator/src/gw_sys/gw_graphic.c \
 LCD-Game-Emulator/src/gw_sys/gw_system.c \
 Core/Src/porting/gw/main_gw.c
 
+MD_C_SOURCES = \
+gwenesis/src/cpus/M68K/m68kcpu.c \
+gwenesis/src/cpus/M68K/m68kops.c \
+gwenesis/src/cpus/M68K/m68kinst.c \
+gwenesis/src/cpus/Z80/Z80.c \
+gwenesis/src/sound/z80inst.c \
+gwenesis/src/sound/ym2612.c \
+gwenesis/src/bus/gwenesis_bus.c \
+gwenesis/src/io/gwenesis_io.c \
+gwenesis/src/vdp/gwenesis_vdp_mem.c \
+gwenesis/src/vdp/gwenesis_vdp_gfx.c \
+Core/Src/porting/gwenesis/main_gwenesis.c
+
+GNUBOY_C_INCLUDES +=  \
+-ICore/Inc \
+-ICore/Src/porting/lib \
+-ICore/Src/porting/lib/lzma \
+-Iretro-go-stm32/components/odroid \
+-Iretro-go-stm32/gnuboy-go/components \
+
+NES_C_INCLUDES +=  \
+-ICore/Inc \
+-ICore/Src/porting/lib \
+-ICore/Src/porting/lib/lzma \
+-Iretro-go-stm32/nofrendo-go/components/nofrendo/cpu \
+-Iretro-go-stm32/nofrendo-go/components/nofrendo/mappers \
+-Iretro-go-stm32/nofrendo-go/components/nofrendo/nes \
+-Iretro-go-stm32/nofrendo-go/components/nofrendo \
+-Iretro-go-stm32/components/odroid \
+
+SMSPLUSGX_C_INCLUDES +=  \
+-ICore/Inc \
+-ICore/Src/porting/lib \
+-ICore/Src/porting/lib/lzma \
+-Iretro-go-stm32/components/odroid \
+-Iretro-go-stm32/gnuboy-go/components \
+-Iretro-go-stm32/smsplusgx-go/components/smsplus \
+-Iretro-go-stm32/smsplusgx-go/components/smsplus/cpu \
+-Iretro-go-stm32/smsplusgx-go/components/smsplus/sound \
+
+PCE_C_INCLUDES +=  \
+-ICore/Inc \
+-ICore/Src/porting/lib \
+-ICore/Src/porting/lib/lzma \
+-Iretro-go-stm32/components/odroid \
+-Iretro-go-stm32/gnuboy-go/components \
+-Iretro-go-stm32/pce-go/components/pce-go \
+-Iretro-go-stm32/smsplusgx-go/components/smsplus \
+-Iretro-go-stm32/smsplusgx-go/components/smsplus/cpu \
+-Iretro-go-stm32/smsplusgx-go/components/smsplus/sound \
+
+GW_C_INCLUDES +=  \
+-ICore/Inc \
+-ICore/Src/porting/lib \
+-ICore/Src/porting/lib/lzma \
+-Iretro-go-stm32/components/odroid \
+-ILCD-Game-Emulator/src \
+-ILCD-Game-Emulator/src/cpus \
+-ILCD-Game-Emulator/src/gw_sys \
+
+MD_C_INCLUDES +=  \
+-ICore/Inc \
+-ICore/Src/porting/lib \
+-ICore/Src/porting/lib/lzma \
+-Iretro-go-stm32/components/odroid \
+-Igwenesis/src/cpus/M68K \
+-Igwenesis/src/cpus/Z80 \
+-Igwenesis/src/sound \
+-Igwenesis/src/bus \
+-Igwenesis/src/vdp \
+-Igwenesis/src/io \
+
 C_INCLUDES +=  \
 -ICore/Inc \
 -ICore/Src/porting/lib \
@@ -175,19 +247,12 @@ C_INCLUDES +=  \
 -Iretro-go-stm32/components/odroid \
 -Iretro-go-stm32/gnuboy-go/components \
 -Iretro-go-stm32/smsplusgx-go/components/smsplus \
--Iretro-go-stm32/smsplusgx-go/components/smsplus/cpu \
--Iretro-go-stm32/smsplusgx-go/components/smsplus/sound \
--Iretro-go-stm32/pce-go/components/pce-go \
--ILCD-Game-Emulator/src \
--ILCD-Game-Emulator/src/cpus \
--ILCD-Game-Emulator/src/gw_sys
 
 include Makefile.common
 
-
 $(BUILD_DIR)/$(TARGET)_extflash.bin: $(BUILD_DIR)/$(TARGET).elf | $(BUILD_DIR)
 	$(V)$(ECHO) [ BIN ] $(notdir $@)
-	$(V)$(BIN) -j ._itcram_hot -j ._ram_exec -j ._extflash -j .overlay_nes -j .overlay_gb -j .overlay_sms -j .overlay_col -j .overlay_pce -j .overlay_gw $< $(BUILD_DIR)/$(TARGET)_extflash.bin
+	$(V)$(BIN) -j ._itcram_hot -j ._ram_exec -j ._extflash -j .overlay_nes -j .overlay_gb -j .overlay_sms -j .overlay_col -j .overlay_pce -j .overlay_gw -j .overlay_md $< $(BUILD_DIR)/$(TARGET)_extflash.bin
 
 $(BUILD_DIR)/$(TARGET)_intflash.bin: $(BUILD_DIR)/$(TARGET).elf | $(BUILD_DIR)
 	$(V)$(ECHO) [ BIN ] $(notdir $@)

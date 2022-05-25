@@ -151,6 +151,7 @@ static const persistent_config_t persistent_config_default = {
         {0}, // SMS
         {0}, // PCE
         {0}, // GW
+        {0}, //MD Genesis
     },
 #if GAME_GENIE == 1
     .rom = {{0}},

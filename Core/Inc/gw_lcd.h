@@ -25,7 +25,7 @@ extern uint8_t emulator_framebuffer[1024* 64]  __attribute__((section (".emulato
 // 0 => framebuffer1
 // 1 => framebuffer2
 extern uint32_t active_framebuffer;
-
+extern uint32_t frame_counter;
 
 void lcd_deinit(SPI_HandleTypeDef *spi);
 void lcd_init(SPI_HandleTypeDef *spi, LTDC_HandleTypeDef *ltdc);
@@ -42,5 +42,10 @@ uint32_t is_lcd_swap_pending(void);
 
 // To be used by fault handlers
 void lcd_reset_active_buffer(void);
+
+uint32_t lcd_get_frame_counter(void);
+uint32_t lcd_get_pixel_position();
+void lcd_set_dithering(uint32_t enable);
+void lcd_set_refresh_rate(uint32_t frequency);
 
 #endif

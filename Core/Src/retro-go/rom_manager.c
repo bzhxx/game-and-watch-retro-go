@@ -5,7 +5,8 @@
 #include "rg_emulators.h"
 #include "utils.h"
 
-const unsigned char *ROM_DATA = NULL;
+//const unsigned char *ROM_DATA = NULL;
+unsigned char *ROM_DATA = NULL;
 unsigned ROM_DATA_LENGTH;
 const char *ROM_EXT = NULL;
 retro_emulator_file_t *ACTIVE_FILE = NULL;
@@ -18,6 +19,8 @@ retro_emulator_file_t *ACTIVE_FILE = NULL;
 #include "sg1000_roms.c"
 #include "pce_roms.c"
 #include "gw_roms.c"
+#include "md_roms.c"
+
 
 const rom_system_t *systems[] = {
     &nes_system,
@@ -28,6 +31,7 @@ const rom_system_t *systems[] = {
     &sg1000_system,
     &pce_system,
     &gw_system,
+    &md_system,
 };
 
 const rom_manager_t rom_mgr = {

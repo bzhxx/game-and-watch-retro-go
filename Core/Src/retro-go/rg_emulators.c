@@ -16,13 +16,14 @@
 #include "main_smsplusgx.h"
 #include "main_pce.h"
 #include "main_gw.h"
+#include "main_gwenesis.h"
 #include "rg_rtc.h"
 
 #if !defined(COVERFLOW)
 #define COVERFLOW 0
 #endif /* COVERFLOW */
 // Increase when adding new emulators
-#define MAX_EMULATORS 8
+#define MAX_EMULATORS 9
 static retro_emulator_t emulators[MAX_EMULATORS];
 static int emulators_count = 0;
 
@@ -115,7 +116,6 @@ static void add_emulator(const char *system, const char *dirname, const char* ex
     p->roms.files = NULL;
     p->initialized = false;
     p->crc_offset = crc_offset;
-
     gui_add_tab(dirname, logo, header, p, event_handler);
 
     emulator_init(p);
@@ -148,7 +148,6 @@ void emulator_init(retro_emulator_t *emu)
             HAL_Delay(100);
         }
     }
-
     // retro_emulator_file_t *file = &emu->roms.files[emu->roms.count++];
     // strcpy(file->folder, "/");
     // strcpy(file->name, "test");
@@ -520,13 +519,21 @@ void emulator_start(retro_emulator_file_t *file, bool load_state, bool start_pau
       SCB_CleanDCache_by_Addr((uint32_t *)&__RAM_EMU_START__, (size_t)&_OVERLAY_PCE_SIZE);
       app_main_pce(load_state, start_paused);
 #endif
+    } else if(strcmp(emu->system_name, "Sega Genesis") == 0)  {
+#ifdef ENABLE_EMULATOR_MD
+
+      memcpy(&__RAM_EMU_START__, &_OVERLAY_MD_LOAD_START, (size_t)&_OVERLAY_MD_SIZE);
+      memset(&_OVERLAY_MD_BSS_START, 0x0, (size_t)&_OVERLAY_MD_BSS_SIZE);
+      SCB_CleanDCache_by_Addr((uint32_t *)&__RAM_EMU_START__, (size_t)&_OVERLAY_MD_SIZE);
+      app_main_gwenesis(load_state, start_paused);
+#endif
   }
     
 }
 
 void emulators_init()
 {
-#if !( defined(ENABLE_EMULATOR_GB) || defined(ENABLE_EMULATOR_NES) || defined(ENABLE_EMULATOR_SMS) || defined(ENABLE_EMULATOR_GG) || defined(ENABLE_EMULATOR_COL) || defined(ENABLE_EMULATOR_SG1000) || defined(ENABLE_EMULATOR_PCE) || defined(ENABLE_EMULATOR_GW))
+#if !( defined(ENABLE_EMULATOR_GB) || defined(ENABLE_EMULATOR_NES) || defined(ENABLE_EMULATOR_SMS) || defined(ENABLE_EMULATOR_GG) || defined(ENABLE_EMULATOR_COL) || defined(ENABLE_EMULATOR_SG1000) || defined(ENABLE_EMULATOR_PCE) || defined(ENABLE_EMULATOR_GW) || defined(ENABLE_EMULATOR_MD))
     // Add gameboy as a placeholder in case no emulator is built.
     add_emulator("Nintendo Gameboy", "gb", "gb", "gnuboy-go", 0, &pad_gb, &header_gb);
 #endif
@@ -557,6 +564,9 @@ void emulators_init()
     add_emulator("Sega Master System", "sms", "sms", "smsplusgx-go", 0, &pad_sms, &header_sms);
 #endif
 
+#ifdef ENABLE_EMULATOR_MD
+    add_emulator("Sega Genesis", "md", "md", "GnWesis", 0, &pad_gen, &header_gen);
+#endif
 
 #ifdef ENABLE_EMULATOR_SG1000
     add_emulator("Sega SG-1000", "sg", "sg", "smsplusgx-go", 0, &pad_sg1000, &header_sg1000);

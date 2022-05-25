@@ -7,6 +7,16 @@
 
 uint8_t audio_level = ODROID_AUDIO_VOLUME_MAX;
 
+
+// the MD audio frequencies are not thoses values
+// they are defined inorder to be synchronized with LCD VSYNC
+// doing this ther is no frame drop due to dual buffer (VSYNC MODE)
+#define MD_AUDIO_FREQ_NTSC 53267
+#define MD_AUDIO_FREQ_PAL 52781
+
+// NOT sync with VSYNC TODO
+#define GW_AUDIO_FREQUENCY 32768
+
 /* set audio frequency  */
 static void set_audio_frequency(uint32_t frequency)
 {
@@ -20,7 +30,7 @@ static void set_audio_frequency(uint32_t frequency)
     /* config to get 32768Hz */
     /* The audio clock frequency is derived directly */
     /* SAI mode is MCKDIV mode */
-    if (frequency == 32768)
+    if (frequency == GW_AUDIO_FREQUENCY)
     {
 
         PeriphClkInitStruct.PLL2.PLL2M = 25;
@@ -32,34 +42,77 @@ static void set_audio_frequency(uint32_t frequency)
         PeriphClkInitStruct.PLL2.PLL2VCOSEL = RCC_PLL2VCOWIDE;
         PeriphClkInitStruct.PLL2.PLL2FRACN = 5000;
 
-    /* config to get 48KHz and multiple */
-    /* SAI mode is in standard frequency mode */
     }
-    else
-    {
+    /* config to get custom AUDIO Frequency for GENESIS NTSC */
+    /*
+    DIVM2=21, DIVN2=124, FRACN2=4566 DIVP2=7 =>
+    52958.06677163,-diff=0.00039619Hz -error=0.00000075% DIVM2=21, DIVN2=124,
+    FRACN2=4565 DIVP2=7 => 52958.01487099,+diff=0.05150445Hz +error=0.00009726%
+    VCO input: 3.05 MHz
+    VCO output:379.60 MHz
+    */
+    /* The audio clock frequency is derived directly */
+    /* SAI mode is MCKDIV mode */
+    else if (frequency == MD_AUDIO_FREQ_NTSC) {
+      PeriphClkInitStruct.PLL2.PLL2M = 21;
+      PeriphClkInitStruct.PLL2.PLL2N = 124;
+      PeriphClkInitStruct.PLL2.PLL2P = 7;
+      PeriphClkInitStruct.PLL2.PLL2Q = 2;
+      PeriphClkInitStruct.PLL2.PLL2R = 5;
+      PeriphClkInitStruct.PLL2.PLL2RGE = RCC_PLL2VCIRANGE_1;
+      PeriphClkInitStruct.PLL2.PLL2VCOSEL = RCC_PLL2VCOWIDE;
+      PeriphClkInitStruct.PLL2.PLL2FRACN = 5000;
 
-        PeriphClkInitStruct.PLL2.PLL2M = 25;
-        PeriphClkInitStruct.PLL2.PLL2N = 192;
-        PeriphClkInitStruct.PLL2.PLL2P = 5;
-        PeriphClkInitStruct.PLL2.PLL2Q = 2;
-        PeriphClkInitStruct.PLL2.PLL2R = 5;
-        PeriphClkInitStruct.PLL2.PLL2RGE = RCC_PLL2VCIRANGE_1;
-        PeriphClkInitStruct.PLL2.PLL2VCOSEL = RCC_PLL2VCOWIDE;
-        PeriphClkInitStruct.PLL2.PLL2FRACN = 0;
+      /* config to get custom AUDIO Frequency foor MEGADRIVE PAL */
+    }
+    /*
+    DIVM2=20, DIVN2=117, FRACN2=4566 DIVP2=7 =>
+    52480.97011021,-diff=0.00041600Hz -error=0.00000079% DIVM2=20, DIVN2=117,
+    FRACN2=4565 DIVP2=7 => 52480.91561454,+diff=0.05407968Hz +error=0.00010305%
+    VCO input: 3.20 MHz
+    VCO output: 376.18 MHz
+    */
+    /* The audio clock frequency is derived directly */
+    /* SAI mode is MCKDIV mode */
+    else if (frequency == MD_AUDIO_FREQ_PAL) {
+      PeriphClkInitStruct.PLL2.PLL2M = 20;
+      PeriphClkInitStruct.PLL2.PLL2N = 117;
+      PeriphClkInitStruct.PLL2.PLL2P = 7;
+      PeriphClkInitStruct.PLL2.PLL2Q = 2;
+      PeriphClkInitStruct.PLL2.PLL2R = 5;
+      PeriphClkInitStruct.PLL2.PLL2RGE = RCC_PLL2VCIRANGE_1;
+      PeriphClkInitStruct.PLL2.PLL2VCOSEL = RCC_PLL2VCOWIDE;
+      PeriphClkInitStruct.PLL2.PLL2FRACN = 5000;
+
+      /* config to get 48KHz and multiple */
+      /* SAI mode is in standard frequency mode */
+    } else {
+
+      PeriphClkInitStruct.PLL2.PLL2M = 25;
+      PeriphClkInitStruct.PLL2.PLL2N = 192;
+      PeriphClkInitStruct.PLL2.PLL2P = 5;
+      PeriphClkInitStruct.PLL2.PLL2Q = 2;
+      PeriphClkInitStruct.PLL2.PLL2R = 5;
+      PeriphClkInitStruct.PLL2.PLL2RGE = RCC_PLL2VCIRANGE_1;
+      PeriphClkInitStruct.PLL2.PLL2VCOSEL = RCC_PLL2VCOWIDE;
+      PeriphClkInitStruct.PLL2.PLL2FRACN = 1;
     }
 
     // keep PLL3 unchanged
+    /*
     PeriphClkInitStruct.PLL3.PLL3M = 4;
-    PeriphClkInitStruct.PLL3.PLL3N = 9;
+    PeriphClkInitStruct.PLL3.PLL3N = 10; //9;
     PeriphClkInitStruct.PLL3.PLL3P = 2;
     PeriphClkInitStruct.PLL3.PLL3Q = 2;
-    PeriphClkInitStruct.PLL3.PLL3R = 24;
+    PeriphClkInitStruct.PLL3.PLL3R = 32; //24;
     PeriphClkInitStruct.PLL3.PLL3RGE = RCC_PLL3VCIRANGE_3;
     PeriphClkInitStruct.PLL3.PLL3VCOSEL = RCC_PLL3VCOWIDE;
     PeriphClkInitStruct.PLL3.PLL3FRACN = 0;
+*/
 
     PeriphClkInitStruct.Sai1ClockSelection = RCC_SAI1CLKSOURCE_PLL2;
     PeriphClkInitStruct.AdcClockSelection = RCC_ADCCLKSOURCE_PLL2;
+
 
     if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInitStruct) != HAL_OK)
     {
@@ -70,9 +123,8 @@ static void set_audio_frequency(uint32_t frequency)
     HAL_SAI_DeInit(&hsai_BlockA1);
 
     /* Set Audio sample rate at 32768Hz using MCKDIV mode */
-    if (frequency == 32768)
+    if (frequency == GW_AUDIO_FREQUENCY)
     {
-
         hsai_BlockA1.Init.AudioFrequency = SAI_AUDIO_FREQUENCY_MCKDIV;
         hsai_BlockA1.Init.Mckdiv = 6;
 
@@ -88,7 +140,11 @@ static void set_audio_frequency(uint32_t frequency)
     SAI_AUDIO_FREQUENCY_11K        11025U
     SAI_AUDIO_FREQUENCY_8K          8000U
     */
-
+    /* Set Audio sample rate at for Genesis (NTSC 60Hz) or MEgadrive (PAL 50Hz) using MCKDIV mode (also for megadrive)*/
+    } else if ( (frequency == MD_AUDIO_FREQ_NTSC) || (frequency == MD_AUDIO_FREQ_PAL) )
+    {
+        hsai_BlockA1.Init.AudioFrequency = SAI_AUDIO_FREQUENCY_MCKDIV;
+        hsai_BlockA1.Init.Mckdiv = 4;
     /* Set Audio sample rate at various standard frequencies using AudioFrequency mode */
     } else {
         /* default value 48KHz */

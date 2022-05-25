@@ -50,6 +50,7 @@ print_usage ram_emu_gb  __RAM_EMU_LENGTH__
 print_usage ram_emu_sms  __RAM_EMU_LENGTH__
 print_usage ram_emu_pce  __RAM_EMU_LENGTH__
 print_usage ram_emu_gw   __RAM_EMU_LENGTH__
+print_usage ram_emu_md   __RAM_EMU_LENGTH__
 print_usage ahbram   __AHBRAM_LENGTH__
 print_usage flash    __FLASH_LENGTH__
 print_usage extflash __EXTFLASH_LENGTH__

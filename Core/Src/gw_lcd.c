@@ -121,10 +121,13 @@ void lcd_init(SPI_HandleTypeDef *spi, LTDC_HandleTypeDef *ltdc) {
 
   memset(fb1, 0, sizeof(framebuffer1));
   memset(fb2, 0, sizeof(framebuffer1));
+
+    HAL_LTDC_ProgramLineEvent(&hltdc,  239);
+  __HAL_LTDC_ENABLE_IT(&hltdc, LTDC_IT_LI | LTDC_IT_RR);  
 }
 
 void HAL_LTDC_ReloadEventCallback (LTDC_HandleTypeDef *hltdc) {
-  frame_counter++;
+ // frame_counter++;
   if (active_framebuffer == 0) {
     HAL_LTDC_SetAddress(hltdc, (uint32_t) fb2, 0);
   } else {
@@ -132,9 +135,18 @@ void HAL_LTDC_ReloadEventCallback (LTDC_HandleTypeDef *hltdc) {
   }
 }
 
+void HAL_LTDC_LineEventCallback (LTDC_HandleTypeDef *hltdc) {
+  frame_counter++;
+ HAL_LTDC_ProgramLineEvent(hltdc,  239);
+}
 uint32_t is_lcd_swap_pending(void)
 {
   return (uint32_t) ((hltdc.Instance->SRCR) & (LTDC_SRCR_VBR | LTDC_SRCR_IMR));
+}
+
+uint32_t lcd_get_pixel_position()
+{
+  return (uint32_t)(hltdc.Instance->CPSR);
 }
 
 void lcd_swap(void)
@@ -183,3 +195,53 @@ void lcd_wait_for_vblank(void)
   }
 }
 
+  uint32_t lcd_get_frame_counter(void)
+{
+  return frame_counter;
+
+}
+
+ void lcd_set_dithering(uint32_t enable) {
+   LTDC_HandleTypeDef *ltdc = &hltdc;
+   if (enable)
+     HAL_LTDC_EnableDither(ltdc);
+   else
+     HAL_LTDC_DisableDither(ltdc);
+ }
+
+ /* set display refresh rate 50Hz or 60Hz  */
+ void lcd_set_refresh_rate(uint32_t frequency) {
+   uint32_t plln = 9, pllr = 24;
+   if (frequency == 60) {
+     plln = 9;
+     pllr = 24;
+   }
+
+   else if (frequency == 50) {
+     plln = 10;
+     pllr = 32;
+   } else {
+    //  printf("wrong lcd refresh rate; 50Hz or 60Hz only\n");
+    //  assert(0);
+     return;
+   }
+
+   /** reconfig PLL3 */
+
+   RCC_PeriphCLKInitTypeDef PeriphClkInitStruct = {0};
+
+  PeriphClkInitStruct.PeriphClockSelection = RCC_PERIPHCLK_LTDC;
+
+   PeriphClkInitStruct.PLL3.PLL3M = 4;
+   PeriphClkInitStruct.PLL3.PLL3N = plln;
+   PeriphClkInitStruct.PLL3.PLL3P = 2;
+   PeriphClkInitStruct.PLL3.PLL3Q = 2;
+   PeriphClkInitStruct.PLL3.PLL3R = pllr;
+   PeriphClkInitStruct.PLL3.PLL3RGE = RCC_PLL3VCIRANGE_3;
+   PeriphClkInitStruct.PLL3.PLL3VCOSEL = RCC_PLL3VCOWIDE;
+   PeriphClkInitStruct.PLL3.PLL3FRACN = 0;
+
+   if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInitStruct) != HAL_OK) {
+     Error_Handler();
+   }
+ }

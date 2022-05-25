@@ -545,7 +545,8 @@ class ROMParser:
         if "GCC_PATH" in os.environ:
             prefix = os.environ["GCC_PATH"]
         prefix = Path(prefix)
-        if system_name == "Megadrive":
+        if system_name == "Sega Genesis":
+            print("reverse bytes")
             subprocess.check_output(
                 [
                     prefix / "arm-none-eabi-objcopy",
@@ -980,7 +981,7 @@ class ROMParser:
     def parse(self, args):
         total_save_size = 0
         total_rom_size = 0
-        sms_larger_rom_size = 0
+        sega_larger_rom_size = 0
         total_img_size = 0
         build_config = ""
         current_id = 0
@@ -1055,7 +1056,7 @@ class ROMParser:
             None,
             current_id,
         )
-        if sms_larger_rom_size < larger_rom_size : sms_larger_rom_size = larger_rom_size
+        if sega_larger_rom_size < larger_rom_size : sega_larger_rom_size = larger_rom_size
 
         total_save_size += save_size
         total_rom_size += rom_size
@@ -1073,7 +1074,7 @@ class ROMParser:
             None,
             current_id,
         )
-        if sms_larger_rom_size < larger_rom_size : sms_larger_rom_size = larger_rom_size
+        if sega_larger_rom_size < larger_rom_size : sega_larger_rom_size = larger_rom_size
         total_save_size += save_size
         total_rom_size += rom_size
         total_img_size += img_size
@@ -1081,7 +1082,7 @@ class ROMParser:
 
         save_size, rom_size, img_size, current_id, larger_rom_size = self.generate_system(
             "Core/Src/retro-go/md_roms.c",
-            "Genesis-Megadrive",
+            "Sega Genesis",
             "md_system",
             "md",
             ["md","gen","bin"],
@@ -1090,7 +1091,7 @@ class ROMParser:
             None,
             current_id,
         )
-        if sms_larger_rom_size < larger_rom_size : sms_larger_rom_size = larger_rom_size
+        if sega_larger_rom_size < larger_rom_size : sega_larger_rom_size = larger_rom_size
         total_save_size += save_size
         total_rom_size += rom_size
         total_img_size += img_size
@@ -1163,7 +1164,8 @@ class ROMParser:
         build_config += "#define ENABLE_EMULATOR_GW\n" if rom_size > 0 else ""
 
         total_size = total_save_size + total_rom_size + total_img_size
-        total_size +=sms_larger_rom_size
+        #total_size +=sega_larger_rom_size
+        sega_larger_rom_size = 0
 
         if total_size == 0:
             print(
@@ -1173,7 +1175,7 @@ class ROMParser:
 
         if args.verbose:
             print(
-                f"Save data:\t{total_save_size} bytes\nROM data:\t{total_rom_size} bytes\nROMs Cache:\t{sms_larger_rom_size} bytes\n"
+                f"Save data:\t{total_save_size} bytes\nROM data:\t{total_rom_size} bytes\nROMs Cache:\t{sega_larger_rom_size} bytes\n"
                 f"Cover images:\t{total_img_size} bytes\n"
                 f"Total:\t\t{total_size} / {args.flash_size} bytes (plus some metadata)."
             )
@@ -1193,7 +1195,7 @@ class ROMParser:
             "build/saveflash.ld", f"__SAVEFLASH_LENGTH__ = {total_save_size};\n"
         )
         self.write_if_changed(
-            "build/cacheflash.ld", f"__CACHEFLASH_LENGTH__ = {sms_larger_rom_size};\n")
+            "build/cacheflash.ld", f"__CACHEFLASH_LENGTH__ = {sega_larger_rom_size};\n")
         self.write_if_changed(
             "build/config.h", build_config)
         self.write_if_changed("build/config.h", build_config)

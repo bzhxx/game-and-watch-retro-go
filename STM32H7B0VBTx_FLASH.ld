@@ -373,7 +373,7 @@ SECTIONS
   _OVERLAY_GW_BSS_SIZE = SIZEOF(.overlay_gw_bss);
 
 
-    .overlay_md __RAM_EMU_START__ : {
+  .overlay_md __RAM_EMU_START__ : {
     . = ALIGN(4);
     __ram_emu_md_start__ = .;
     build/md/*.o (.data. data* .text .text* .rodata .rodata*)
