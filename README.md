@@ -76,6 +76,7 @@ Supported emulators:
 - Sega Game Gear (gg)
 - Sega Master System (sms)
 - Sega SG-1000 (sg)
+- Sega Genesis / Megadrive (md)
 
 ## Table of Contents
 - [Emulator collection for Nintendo® Game & Watch™](#emulator-collection-for-nintendo-game--watch)
