@@ -82,39 +82,38 @@ void lcd_init(SPI_HandleTypeDef *spi, LTDC_HandleTypeDef *ltdc) {
   gw_lcd_set_chipselect(0);
 
   // LCD reset
-  gw_lcd_set_reset(1);
+  gw_lcd_set_reset(0);
 
   // Wake up !
   // Enable 1.8V &3V3 power supply
   gw_set_power_3V3(1);
+  HAL_Delay(2);
   gw_set_power_1V8(1);
-  HAL_Delay(20);
+  HAL_Delay(50);
   wdog_refresh();
 
   // Lets go, bootup sequence.
   /* reset sequence */
-  gw_lcd_set_reset(0);
-  HAL_Delay(1);
   gw_lcd_set_reset(1);
-  HAL_Delay(15);
+  HAL_Delay(20);
   gw_lcd_set_reset(0);
-  HAL_Delay(1);
+  HAL_Delay(50);
   wdog_refresh();
-
+  
   gw_lcd_spi_tx(spi, (uint8_t *)"\x08\x80");
   gw_lcd_spi_tx(spi, (uint8_t *)"\x6E\x80");
   gw_lcd_spi_tx(spi, (uint8_t *)"\x80\x80");
 
-  // change x00 one of those lines to flip the screen :)
+
   gw_lcd_spi_tx(spi, (uint8_t *)"\x68\x00");
   gw_lcd_spi_tx(spi, (uint8_t *)"\xd0\x00");
   gw_lcd_spi_tx(spi, (uint8_t *)"\x1b\x00");
   gw_lcd_spi_tx(spi, (uint8_t *)"\xe0\x00");
 
+  // change to x6a\xx00 to flip the screen :)
   gw_lcd_spi_tx(spi, (uint8_t *)"\x6a\x80");
   gw_lcd_spi_tx(spi, (uint8_t *)"\x80\x00");
   gw_lcd_spi_tx(spi, (uint8_t *)"\x14\x80");
-
   wdog_refresh();
 
   HAL_LTDC_SetAddress(ltdc,(uint32_t) &fb1, 0);

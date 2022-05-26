@@ -1205,12 +1205,12 @@ static void MX_GPIO_Init(void)
   HAL_GPIO_WritePin(GPIOE, GPIO_PIN_8, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
-  /* PB12 LCD Reset line pull-up VAux1V8 */
+  /* PB12 LCD Chip Select line pull-up VAux1V8 (inverted) */
   HAL_GPIO_WritePin(GPIOB, GPIO_PIN_12, GPIO_PIN_SET);
 
   /*Configure GPIO pin Output Level */
-  /* PD8 LCD_CSn Chip Select line low speed due to capacitor 100nf to GND (inverted) */
-  HAL_GPIO_WritePin(GPIOD, GPIO_PIN_8, GPIO_PIN_SET);
+  /* PD8 LCD Reset line low speed with capacitor 100nf to GND */
+  HAL_GPIO_WritePin(GPIOD, GPIO_PIN_8, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
    /* PD1 1.8V-> 1.8Vaux Disable power for LCD & External FLASH */
