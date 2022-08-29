@@ -581,10 +581,10 @@ void SystemClock_Config(void)
    CoreClock= HSI/PLLM x PLLN/PLLP
    OSPIClock= HSI/PLLM x PLLN/PLLQ
   */
-  RCC_OscInitStruct.PLL.PLLM = 16;
-  RCC_OscInitStruct.PLL.PLLN = 156;
+  RCC_OscInitStruct.PLL.PLLM = 38; //16;
+  RCC_OscInitStruct.PLL.PLLN = 420; //156;
   RCC_OscInitStruct.PLL.PLLP = 2;
-  RCC_OscInitStruct.PLL.PLLQ = 6;
+  RCC_OscInitStruct.PLL.PLLQ = 7; //6;
   RCC_OscInitStruct.PLL.PLLR = 2;
   RCC_OscInitStruct.PLL.PLLRGE = RCC_PLL1VCIRANGE_2;
   RCC_OscInitStruct.PLL.PLLVCOSEL = RCC_PLL1VCOWIDE;

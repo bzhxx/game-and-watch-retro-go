@@ -18,6 +18,7 @@ __license__ = "GPLv3"
 */
 
 #include <odroid_system.h>
+#include <stdint.h>
 #include <string.h>
 #include <assert.h>
 
@@ -39,11 +40,15 @@ __license__ = "GPLv3"
 #include "m68k.h"
 #include "z80inst.h"
 #include "ym2612.h"
+#include "gwenesis_sn76489.h"
 #include "gwenesis_bus.h"
 #include "gwenesis_io.h"
 #include "gwenesis_vdp.h"
+#include "gwenesis_savestate.h"
 
 #pragma GCC optimize("Ofast")
+
+#define ENABLE_DEBUG_OPTIONS 0
 
 static const uint8_t IMG_DISKETTE[] = {
     0x00, 0x00, 0x00, 0x3F, 0xFF, 0xE0, 0x7C, 0x00, 0x70, 0x7C, 0x03, 0x78,
@@ -139,66 +144,37 @@ static void load_rom_from_flash() {
 
 static unsigned int gwenesis_show_debug_bar = 0;
 
-// NTSC PAL timings
-const unsigned int MCLOCK_PAL = 53203424;
-const unsigned int MCLOCK_NTSC = 53693175;
-const unsigned int MCYCLES_PER_LINE = 3420;
-const unsigned int MCYCLES_PER_FRAME_NTSC = 896040;
-const unsigned int MCYCLES_PER_FRAME_PAL = 1067040;
-const unsigned int LINES_PER_FRAME_NTSC = 262;
-const unsigned int LINES_PER_FRAME_PAL = 313;
 
-#define GWENESIS_REFRESH_RATE_NTSC 60
-#define GWENESIS_AUDIO_FREQ_NTSC 53267
-
-#define GWENESIS_REFRESH_RATE_PAL 50
-#define GWENESIS_AUDIO_FREQ_PAL 52781
-
-/* Audio buffer length */
-
-#define GWENESIS_AUDIO_BUFFER_LENGTH_NTSC (888)
-#define GWENESIS_AUDIO_BUFFER_LENGTH_DMA_NTSC ( 2 * GWENESIS_AUDIO_BUFFER_LENGTH_NTSC )
-
-#define GWENESIS_AUDIO_BUFFER_LENGTH_PAL (1056)
-#define GWENESIS_AUDIO_BUFFER_LENGTH_DMA_PAL (2 * GWENESIS_AUDIO_BUFFER_LENGTH_PAL )
-
-/* Audio buffer */
-short int gwenesis_audio_buffer[2120]; // at least [GWENESIS_AUDIO_BUFFER_LENGTH_PAL * 2];
-
-unsigned int gwenesis_audio_freq = GWENESIS_AUDIO_FREQ_NTSC;
-unsigned int gwenesis_audio_buffer_lenght = GWENESIS_AUDIO_BUFFER_LENGTH_NTSC;
-unsigned int gwenesis_audio_buffer_lenght_DMA = GWENESIS_AUDIO_BUFFER_LENGTH_DMA_NTSC;
-unsigned int gwenesis_vsync_mode = 0;
-unsigned int gwenesis_refresh_rate = GWENESIS_REFRESH_RATE_NTSC;
+unsigned int gwenesis_audio_freq;
+unsigned int gwenesis_audio_buffer_lenght;
+unsigned int gwenesis_audio_buffer_lenght_DMA;
+static int gwenesis_vsync_mode = 0;
+unsigned int gwenesis_refresh_rate;
 
 unsigned int gwenesis_lcd_current_line;
 #define GWENESIS_AUDIOSYNC_START_LCD_LINE 248
 
-unsigned int nb_audio_samples;
+static int gwenesis_lpfilter = 0;
+extern int gwenesis_H32upscaler;
+static unsigned int gwenesis_audio_pll_sync = 0;
 
-uint64_t system_clock;
-uint64_t m68k_clock;
+/* Clocks and synchronization */
+/* system clock is video clock */
+int system_clock;
+
+/* shared variables with gwenesis_sn76589 */
+int16_t gwenesis_sn76489_buffer[GWENESIS_AUDIO_BUFFER_LENGTH_PAL];
+int sn76489_index; /* sn78649 audio buffer index */
+int sn76489_clock; /* sn78649 clock in video clock resolution */
+
+
+/* shared variables with gwenesis_ym2612 */
+int16_t gwenesis_ym2612_buffer[GWENESIS_AUDIO_BUFFER_LENGTH_PAL];
+int ym2612_index; /* ym2612 audio buffer index */
+int ym2612_clock; /* ym2612 clock in video clock resolution */
 
 /* keys inpus (hw & sw) */
 static odroid_gamepad_state_t joystick;
-
-//static unsigned char state_save_buffer[sizeof(gwenesis_state_t)];
-
-static bool gwenesis_system_SaveState(char *pathName)
-{
-   // printf("Saving state...\n");
-
-    //   memset(state_save_buffer, '\x00', sizeof(state_save_buffer));
-    ////  store_save(ACTIVE_FILE->save_address, state_save_buffer, sizeof(state_save_buffer));
-    return false;
-}
-
-static bool gwenesis_system_LoadState(char *pathName)
-{
-    //printf("Loading state...\n");
-    //   return gwenesis_state_load(ACTIVE_FILE->save_address);
-    return false;
-}
 
 /* Configurable keys mapping for A,B and C */
 
@@ -258,39 +234,38 @@ void gwenesis_io_get_buttons()
                     host_joystick.values[PAD_C_def] << PAD_C |
                     host_joystick.values[ODROID_INPUT_START] << PAD_S;
                   
-  button_state[1] = 0;
-  button_state[2] = 0;
+  button_state[0] = ~ button_state[0];
+
 }
 
 static void gwenesis_system_init() {
 
   /* init emulator sound system with shared audio buffer */
+ // extern int mode_pal;
 
-  // TODO Support 50HZ PAL mode !!
-  // extern int mode_pal;
-  int mode_pal = 0;
-
-  system_clock = 0;
-  m68k_clock = 0;
+  gwenesis_audio_pll_sync = 0;
 
   /* clear DMA audio buffer */
-  memset(audiobuffer_dma, 0, sizeof(audiobuffer_dma));
-  memset(audiobuffer_emulator, 0, sizeof(audiobuffer_emulator));
+  memset(audiobuffer_dma, 0, sizeof(audiobuffer_dma ));
 
-  if (mode_pal) {
+//  memset(audiobuffer_emulator, 0, sizeof(audiobuffer_emulator));
 
-    gwenesis_audio_freq = GWENESIS_AUDIO_FREQ_PAL;
-    gwenesis_audio_buffer_lenght = GWENESIS_AUDIO_BUFFER_LENGTH_PAL;
-    gwenesis_audio_buffer_lenght_DMA = GWENESIS_AUDIO_BUFFER_LENGTH_DMA_PAL;
-    gwenesis_refresh_rate = GWENESIS_REFRESH_RATE_PAL;
+ // if (mode_pal) {
 
-  } else {
+  //  gwenesis_audio_freq = GWENESIS_AUDIO_FREQ_PAL;
+  //  gwenesis_audio_buffer_lenght = GWENESIS_AUDIO_BUFFER_LENGTH_PAL;
+  //  gwenesis_audio_buffer_lenght_DMA = 2 * GWENESIS_AUDIO_BUFFER_LENGTH_PAL;
+  //  gwenesis_refresh_rate = GWENESIS_REFRESH_RATE_PAL;
+
+ // } else {
 
     gwenesis_audio_freq = GWENESIS_AUDIO_FREQ_NTSC;
     gwenesis_audio_buffer_lenght = GWENESIS_AUDIO_BUFFER_LENGTH_NTSC;
-    gwenesis_audio_buffer_lenght_DMA = GWENESIS_AUDIO_BUFFER_LENGTH_DMA_NTSC;
+    gwenesis_audio_buffer_lenght_DMA = 2 * GWENESIS_AUDIO_BUFFER_LENGTH_NTSC;
     gwenesis_refresh_rate = GWENESIS_REFRESH_RATE_NTSC;
-  }
+ // }
+    memset(gwenesis_sn76489_buffer,0,sizeof(gwenesis_sn76489_buffer));
+    memset(gwenesis_ym2612_buffer,0,sizeof(gwenesis_ym2612_buffer));
 
   odroid_audio_init(gwenesis_audio_freq);
   lcd_set_refresh_rate(gwenesis_refresh_rate);
@@ -313,31 +288,43 @@ static void gwenesis_sound_start()
 
 #define GWENESIS_FRACN_DOWN 3000
 #define GWENESIS_FRACN_UP 6000
+
 #define GWENESIS_FRACN_CENTER 4566
+
 /* AUDIO PLL controller */
 static void gwenesis_audio_pll_stepdown() {
 
   __HAL_RCC_PLL2FRACN_DISABLE();
   __HAL_RCC_PLL2FRACN_CONFIG(GWENESIS_FRACN_DOWN);
   __HAL_RCC_PLL2FRACN_ENABLE();
+  gwenesis_audio_pll_sync = 0;
 }
 static void gwenesis_audio_pll_stepup() {
 
   __HAL_RCC_PLL2FRACN_DISABLE();
   __HAL_RCC_PLL2FRACN_CONFIG(GWENESIS_FRACN_UP);
   __HAL_RCC_PLL2FRACN_ENABLE();
+  gwenesis_audio_pll_sync = 0;
 }
 
 static void gwenesis_audio_pll_center() {
-
-  __HAL_RCC_PLL2FRACN_DISABLE();
-  __HAL_RCC_PLL2FRACN_CONFIG(GWENESIS_FRACN_CENTER);
-  __HAL_RCC_PLL2FRACN_ENABLE();
+  if (gwenesis_audio_pll_sync == 0) {
+    __HAL_RCC_PLL2FRACN_DISABLE();
+    __HAL_RCC_PLL2FRACN_CONFIG(GWENESIS_FRACN_CENTER);
+    __HAL_RCC_PLL2FRACN_ENABLE();
+    gwenesis_audio_pll_sync = 1;
+  }
 }
+
+/* single-pole low-pass filter (6 dB/octave) */
+const uint32_t factora  = 0x1000; // todo as UI parameter
+const uint32_t factorb  = 0x10000 - factora;
 
 static void gwenesis_sound_submit() {
   uint8_t volume = odroid_audio_volume_get();
   int16_t factor = volume_tbl[volume];
+
+  static int16_t gwenesis_audio_out = 0;
 
   size_t offset;
   offset = (dma_state == DMA_TRANSFER_STATE_HF) ? 0 : gwenesis_audio_buffer_lenght;
@@ -347,13 +334,23 @@ static void gwenesis_sound_submit() {
       audiobuffer_dma[i + offset] = 0;
     }
   } else {
-    for (int i = 0; i < gwenesis_audio_buffer_lenght; i++) {
+    // filter on
+    if (gwenesis_lpfilter) {
+      for (int i = 0; i < gwenesis_audio_buffer_lenght; i++) {
 
-      //stereo+ add
-     // audiobuffer_dma[i + offset] = ((gwenesis_audio_buffer[i * 2] + gwenesis_audio_buffer[i * 2 + 1]) * factor) /1024;
-      
-      //single mone left or right
-       audiobuffer_dma[i + offset] =  ( (gwenesis_audio_buffer[i*2] ) * factor) / 512;
+        // low pass filter
+        int32_t gwenesis_audio_tmp = gwenesis_audio_out * factorb + (gwenesis_ym2612_buffer[i] + gwenesis_sn76489_buffer[i]) * factora;
+        gwenesis_audio_out = gwenesis_audio_tmp >> 16;
+        audiobuffer_dma[i + offset] = ((gwenesis_audio_out) * factor ) / 128;
+      }
+    // filter off
+    } else {
+      for (int i = 0; i < gwenesis_audio_buffer_lenght; i++) {
+
+        // single mone left or right
+       // audiobuffer_dma[i + offset] = ((gwenesis_ym2612_buffer[i]) * factor) / 256;
+        audiobuffer_dma[i + offset] = ((gwenesis_ym2612_buffer[i] + gwenesis_sn76489_buffer[i]) * factor) / 512;
+      }
     }
   }
 }
@@ -398,7 +395,7 @@ static void gwenesis_debug_bar()
   static unsigned int loop_duration_us = 1;
   static unsigned int end_duration_us = 1;
   static unsigned int cpu_workload = 0;
-  static const unsigned int SYSTEM_CORE_CLOCK_MHZ = 312; //353; //340; //312; // 280;
+  static const unsigned int SYSTEM_CORE_CLOCK_MHZ = 353; //340; //312; // 280;
 
   static bool debug_init_done = false;
 
@@ -422,6 +419,7 @@ static void gwenesis_debug_bar()
             end_duration_us, cpu_workload, frame_counter, overflow_count,
             gwenesis_lcd_current_line);
 
+
   odroid_overlay_draw_text(0, 0, 320, debugMsg, C_GW_YELLOW, C_GW_RED);
 
 }
@@ -433,48 +431,40 @@ unsigned int scan_line;
 unsigned int drawFrame = 1;
 
 
-/* M68K execution */
-static inline void m68k_run(uint64_t target) {
+// static char gwenesis_GameGenie_str[10]="....-....";
+// static bool gwenesis_submenu_GameGenie(odroid_dialog_choice_t *option, odroid_dialog_event_t event, uint32_t repeat)
+// {
 
-  m68k_execute( (target - m68k_clock) / M68K_FREQ_DIVISOR);
-  m68k_clock = target;
-}
+//     // if (event == ODROID_DIALOG_PREV)
+//     //     flag_lcd_deflicker_level = flag_lcd_deflicker_level > 0 ? flag_lcd_deflicker_level - 1 : max_flag_lcd_deflicker_level;
 
+//     // if (event == ODROID_DIALOG_NEXT)
+//     //     flag_lcd_deflicker_level = flag_lcd_deflicker_level < max_flag_lcd_deflicker_level ? flag_lcd_deflicker_level + 1 : 0;
 
-static char gwenesis_GameGenie_str[10]="....-....";
-static bool gwenesis_submenu_GameGenie(odroid_dialog_choice_t *option, odroid_dialog_event_t event, uint32_t repeat)
-{
+//     // if (flag_lcd_deflicker_level == 0) strcpy(option->value, "0-none");
+//     // if (flag_lcd_deflicker_level == 1) strcpy(option->value, "1-medium");
+//     // if (flag_lcd_deflicker_level == 2) strcpy(option->value, "2-high");
 
-    // if (event == ODROID_DIALOG_PREV)
-    //     flag_lcd_deflicker_level = flag_lcd_deflicker_level > 0 ? flag_lcd_deflicker_level - 1 : max_flag_lcd_deflicker_level;
+//     return event == ODROID_DIALOG_ENTER;
+// }
 
-    // if (event == ODROID_DIALOG_NEXT)
-    //     flag_lcd_deflicker_level = flag_lcd_deflicker_level < max_flag_lcd_deflicker_level ? flag_lcd_deflicker_level + 1 : 0;
-
-    // if (flag_lcd_deflicker_level == 0) strcpy(option->value, "0-none");
-    // if (flag_lcd_deflicker_level == 1) strcpy(option->value, "1-medium");
-    // if (flag_lcd_deflicker_level == 2) strcpy(option->value, "2-high");
-
-    return event == ODROID_DIALOG_ENTER;
-}
-
-static char gwenesis_GameGenie_reverse_str[10]="....-....";
-static bool gwenesis_submenu_GameGenie_reverse(odroid_dialog_choice_t *option, odroid_dialog_event_t event, uint32_t repeat)
-{
+// static char gwenesis_GameGenie_reverse_str[10]="....-....";
+// static bool gwenesis_submenu_GameGenie_reverse(odroid_dialog_choice_t *option, odroid_dialog_event_t event, uint32_t repeat)
+// {
 
 
-    // if (event == ODROID_DIALOG_PREV)
-    //     flag_lcd_deflicker_level = flag_lcd_deflicker_level > 0 ? flag_lcd_deflicker_level - 1 : max_flag_lcd_deflicker_level;
+//     // if (event == ODROID_DIALOG_PREV)
+//     //     flag_lcd_deflicker_level = flag_lcd_deflicker_level > 0 ? flag_lcd_deflicker_level - 1 : max_flag_lcd_deflicker_level;
 
-    // if (event == ODROID_DIALOG_NEXT)
-    //     flag_lcd_deflicker_level = flag_lcd_deflicker_level < max_flag_lcd_deflicker_level ? flag_lcd_deflicker_level + 1 : 0;
+//     // if (event == ODROID_DIALOG_NEXT)
+//     //     flag_lcd_deflicker_level = flag_lcd_deflicker_level < max_flag_lcd_deflicker_level ? flag_lcd_deflicker_level + 1 : 0;
 
-    // if (flag_lcd_deflicker_level == 0) strcpy(option->value, "0-none");
-    // if (flag_lcd_deflicker_level == 1) strcpy(option->value, "1-medium");
-    // if (flag_lcd_deflicker_level == 2) strcpy(option->value, "2-high");
+//     // if (flag_lcd_deflicker_level == 0) strcpy(option->value, "0-none");
+//     // if (flag_lcd_deflicker_level == 1) strcpy(option->value, "1-medium");
+//     // if (flag_lcd_deflicker_level == 2) strcpy(option->value, "2-high");
 
-    return event == ODROID_DIALOG_ENTER;
-}
+//     return event == ODROID_DIALOG_ENTER;
+// }
 
 static bool gwenesis_submenu_setABC(odroid_dialog_choice_t *option, odroid_dialog_event_t event, uint32_t repeat)
 {
@@ -541,17 +531,28 @@ static bool gwenesis_submenu_debug_bar(odroid_dialog_choice_t *option, odroid_di
     return event == ODROID_DIALOG_ENTER;
 }
 
-static unsigned int DitheringState = 0;
-static char DitheringState_value[4]="OFF";
-static bool gwenesis_submenu_setDithering(odroid_dialog_choice_t *option, odroid_dialog_event_t event, uint32_t repeat)
+static char AudioFilter_str[4] ="OFF";
+static bool gwenesis_submenu_setAudioFilter(odroid_dialog_choice_t *option, odroid_dialog_event_t event, uint32_t repeat)
 {
   if (event == ODROID_DIALOG_PREV || event == ODROID_DIALOG_NEXT) {
-    DitheringState = DitheringState == 0 ? 1 : 0;
-    lcd_set_dithering(DitheringState);
+    gwenesis_lpfilter = gwenesis_lpfilter == 0 ? 1 : 0;
   }
 
-    if (DitheringState == 0) strcpy(option->value, "OFF");
-    if (DitheringState == 1) strcpy(option->value, "ON ");
+    if (gwenesis_lpfilter == 0) strcpy(option->value, "OFF");
+    if (gwenesis_lpfilter == 1) strcpy(option->value, "ON ");
+
+    return event == ODROID_DIALOG_ENTER;
+}
+
+static char VideoUpscaler_str[4] ="ON ";
+static bool gwenesis_submenu_setVideoUpscaler(odroid_dialog_choice_t *option, odroid_dialog_event_t event, uint32_t repeat)
+{
+  if (event == ODROID_DIALOG_PREV || event == ODROID_DIALOG_NEXT) {
+    gwenesis_H32upscaler = gwenesis_H32upscaler == 0 ? 1 : 0;
+  }
+
+    if (gwenesis_H32upscaler == 0) strcpy(option->value, "OFF");
+    if (gwenesis_H32upscaler == 1) strcpy(option->value, "ON ");
 
     return event == ODROID_DIALOG_ENTER;
 }
@@ -568,15 +569,73 @@ static bool gwenesis_submenu_sync_mode(odroid_dialog_choice_t *option, odroid_di
 
     return event == ODROID_DIALOG_ENTER;
 }
+static char gwenesis_break_str[6]="BREAK";
 
+static bool gwenesis_break(odroid_dialog_choice_t *option, odroid_dialog_event_t event, uint32_t repeat) {
+  if (event == ODROID_DIALOG_PREV || event == ODROID_DIALOG_NEXT)
+    assert(0);
+  return event == ODROID_DIALOG_ENTER;
+}
 static odroid_dialog_choice_t options[] = {
-    {303, "keys: A-B-C", ABCkeys_str, 1, &gwenesis_submenu_setABC},
-    {304, "Synchro", gwenesis_sync_mode_str, 1, &gwenesis_submenu_sync_mode},
-    {305, "Dithering", DitheringState_value, 1, &gwenesis_submenu_setDithering},
-    {310, "Debug bar", debug_bar_str,1, &gwenesis_submenu_debug_bar},
-    {320, "+GameGenie", gwenesis_GameGenie_str, 0, &gwenesis_submenu_GameGenie},
-    {330, "-GameGenie", gwenesis_GameGenie_reverse_str, 0, &gwenesis_submenu_GameGenie_reverse},
+    {301, "keys: A-B-C", ABCkeys_str, 1, &gwenesis_submenu_setABC},
+    {302, "AudioFilter",AudioFilter_str,1,&gwenesis_submenu_setAudioFilter},
+    {303, "VideoUpscaler",VideoUpscaler_str,ENABLE_DEBUG_OPTIONS,&gwenesis_submenu_setVideoUpscaler},
+    {304, "Synchro", gwenesis_sync_mode_str, ENABLE_DEBUG_OPTIONS, &gwenesis_submenu_sync_mode},
+    {310, "Debug bar", debug_bar_str,ENABLE_DEBUG_OPTIONS, &gwenesis_submenu_debug_bar},
+  //  {320, "+GameGenie", gwenesis_GameGenie_str, 0, &gwenesis_submenu_GameGenie},
+  //  {330, "-GameGenie", gwenesis_GameGenie_reverse_str, 0, &gwenesis_submenu_GameGenie_reverse},
+  {399,"BREAK",gwenesis_break_str,ENABLE_DEBUG_OPTIONS,&gwenesis_break},
+
     ODROID_DIALOG_CHOICE_LAST};
+    
+void gwenesis_save_local_data(void) {
+  SaveState *state = saveGwenesisStateOpenForWrite("gwenesis");
+
+
+  saveGwenesisStateSetBuffer(state, "ABCkeys_value", &ABCkeys_value, sizeof(int));
+  saveGwenesisStateSet(state, "PAD_A_def", PAD_A_def);
+  saveGwenesisStateSet(state, "PAD_B_def", PAD_B_def);
+  saveGwenesisStateSet(state, "PAD_C_def", PAD_C_def);
+  
+    // Audio low pass filter "ON or OFF"
+  saveGwenesisStateSetBuffer(state, "AudioFilter_str", &AudioFilter_str, sizeof(int));
+  saveGwenesisStateSet(state, "gwenesis_lpfilter",gwenesis_lpfilter);
+  
+  // Video upscaler        "ON or OFF"
+  saveGwenesisStateSetBuffer(state, "VideoUpscaler_str", &VideoUpscaler_str, sizeof(int));
+  saveGwenesisStateSet(state, "gwenesis_H32upscaler",gwenesis_H32upscaler);
+}
+
+void gwenesis_load_local_data(void) {
+  SaveState *state = saveGwenesisStateOpenForWrite("gwenesis");
+
+  // A-B-C keys mapping
+  saveGwenesisStateGetBuffer(state, "ABCkeys_value", &ABCkeys_value, sizeof(int));
+  PAD_A_def = saveGwenesisStateGet(state, "PAD_A_def");
+  PAD_B_def = saveGwenesisStateGet(state, "PAD_B_def");
+  PAD_C_def = saveGwenesisStateGet(state, "PAD_C_def");
+  
+  // Audio low pass filter "ON or OFF"
+  saveGwenesisStateGetBuffer(state, "AudioFilter_str", &AudioFilter_str, sizeof(int));
+  gwenesis_lpfilter = saveGwenesisStateGet(state, "gwenesis_lpfilter");
+  
+  // Video upscaler        "ON or OFF"
+  saveGwenesisStateGetBuffer(state, "VideoUpscaler_str", &VideoUpscaler_str, sizeof(int));
+  gwenesis_H32upscaler = saveGwenesisStateGet(state, "gwenesis_H32upscaler");
+}
+
+static bool gwenesis_system_SaveState(char *pathName) {
+  int size = 0;
+  printf("Saving state...\n");
+  size = saveGwenesisState((unsigned char *)ACTIVE_FILE->save_address,ACTIVE_FILE->save_size);
+  printf("Saved state size:%d\n", size);
+  return true;
+}
+
+static bool gwenesis_system_LoadState(char *pathName) {
+  printf("Loading state...\n");
+  return loadGwenesisState((unsigned char *)ACTIVE_FILE->save_address);
+}
 
 /* Main */
 int app_main_gwenesis(uint8_t load_state, uint8_t start_paused)
@@ -587,205 +646,235 @@ int app_main_gwenesis(uint8_t load_state, uint8_t start_paused)
     odroid_system_emu_init(&gwenesis_system_LoadState, &gwenesis_system_SaveState, NULL);
    // rg_app_desc_t *app = odroid_system_get_app();
 
-    //common_emu_state.frame_time_10us = (uint16_t)(100000 / GWENESIS_REFRESH_RATE + 0.5f);
+    common_emu_state.frame_time_10us = (uint16_t)(100000 / 60.0 + 0.5f);
 
-    // if (start_paused) {
-    //     common_emu_state.pause_after_frames = 2;
-    //     odroid_audio_mute(true);
-    // } else {
-    //     common_emu_state.pause_after_frames = 0;
-    // }
-    load_rom_from_flash();
+    if (start_paused) {
+      common_emu_state.pause_after_frames = 2;
+      odroid_audio_mute(true);
+    } else {
+       common_emu_state.pause_after_frames = 0;
+    }
 
     /*** load ROM  */
+    load_rom_from_flash();
     load_cartridge();
-
-    //bool rom_status = gwenesis_system_romload();
-
-    // if (!rom_status)
-    //     odroid_system_switch_app(0);
 
     gwenesis_system_init();
 
     power_on();
     reset_emulation();
 
-   /* clear the screen before rendering */
-   memset(lcd_get_inactive_buffer(), 0, 320 * 240 * 2);
-   memset(lcd_get_active_buffer(), 0, 320 * 240 * 2);
+    /* clear the screen before rendering */
+    memset(lcd_get_inactive_buffer(), 0, 320 * 240 * 2);
+    memset(lcd_get_active_buffer(), 0, 320 * 240 * 2);
 
-   unsigned short *screen = 0;
+    unsigned short *screen = 0;
 
-   screen = lcd_get_active_buffer();
-   gwenesis_vdp_set_buffer(&screen[0]);
-   extern unsigned char gwenesis_vdp_regs[0x20];
-   extern unsigned int gwenesis_vdp_status;
-   extern unsigned int screen_width, screen_height;
-   static int hori_screen_offset, vert_screen_offset;
-   int hint_counter;
-   extern int hint_pending;
-   volatile unsigned int current_frame;
-   system_clock = 0;
-   m68k_clock = 0;
-
-  /* Start at the same time DMAs audio & video */
-  /* Audio period and Video period are the same (almost at least 1 hour) */
-   lcd_wait_for_vblank();
-   gwenesis_sound_start();
-
-   //gwenesis_init_position = 0xFFFF & lcd_get_pixel_position();
-   while (true) {
-
-     /* capture the frame processed by the LCD controller */
-     current_frame = frame_counter;
-
-     /* clear DWT counter used to monitor performances */
-     clear_dwt_cycles();
-
-     /* reset watchdog */
-     wdog_refresh();
-
-     /* hardware keys */
-     odroid_input_read_gamepad(&joystick);
-
-     /* SWAP TIME & PAUSE/SET for MARIO G&W device */
-#if GNW_TARGET_MARIO != 0
-     unsigned int key_state = joystick.values[ODROID_INPUT_VOLUME];
-     joystick.values[ODROID_INPUT_VOLUME] = joystick.values[ODROID_INPUT_SELECT];
-     joystick.values[ODROID_INPUT_SELECT] = key_state;
-#endif
-
-     common_emu_input_loop(&joystick, options);
-
-     // bool drawFrame =
-     common_emu_frame_loop();
-
-     /* Eumulator loop */
-
-     hint_counter = gwenesis_vdp_regs[10];
-
-     screen_height = REG1_PAL ? 240 : 224;
-     screen_width = REG12_MODE_H40 ? 320 : 256;
-     lines_per_frame = REG1_PAL ? LINES_PER_FRAME_PAL : LINES_PER_FRAME_NTSC;
-     vert_screen_offset = REG1_PAL ? 0 : 320 * (240 - 224) / 2;
-
-     hori_screen_offset = REG12_MODE_H40 ? 0 : (320 - 256) / 2;
-     screen = lcd_get_active_buffer();
-     gwenesis_vdp_set_buffer(&screen[vert_screen_offset + hori_screen_offset]);
-
-     gwenesis_vdp_render_config();
-
-     unsigned int audio_index = 0;
-     unsigned int audio_step = 1 + 222122; // (gwenesis_audio_buffer_lenght << 16) / lines_per_frame;
-
-     unsigned int prev_index = 0;
-     for (scan_line = 0; scan_line < lines_per_frame; scan_line++) {
-
-       m68k_run(system_clock + VDP_CYCLES_PER_LINE);
-       z80_run(system_clock + VDP_CYCLES_PER_LINE);
-
-
-
-       /* Audio */
-       uint8_t volume = odroid_audio_volume_get();
-       prev_index = audio_index;
-       audio_index += audio_step;
-       if (!(audio_mute || volume == ODROID_AUDIO_VOLUME_MIN))
-         YM2612Update(gwenesis_audio_buffer + (audio_index >> 16) * 2,
-                      (audio_index >> 16) - (prev_index >> 16));
-
-       /* video */
-       if (drawFrame)
-         gwenesis_vdp_render_line(scan_line); /* render scan_line */
-
-       // On these lines, the line counter interrupt is reloaded
-       if ((scan_line == 0) || (scan_line > screen_height))
-         hint_counter = REG10_LINE_COUNTER;
-
-       // interrupt line counter
-       if (--hint_counter < 0) {
-         if (REG0_LINE_INTERRUPT && (scan_line <= screen_height)) {
-           hint_pending = 1;
-           if ((gwenesis_vdp_status & STATUS_VIRQPENDING) == 0)
-             m68k_set_irq(4);
-         }
-         hint_counter = REG10_LINE_COUNTER;
-       }
-
-       // vblank begin at the end of last rendered line
-       if (scan_line == (screen_height - 1)) {
-         if (REG1_VBLANK_INTERRUPT) {
-           gwenesis_vdp_status |= STATUS_VIRQPENDING;
-           m68k_set_irq(6);
-         }
-         z80_irq_line(1);
-       }
-       if (scan_line == screen_height) {
-
-         z80_irq_line(0);
-       }
-
-       system_clock += VDP_CYCLES_PER_LINE;
-     }
-
-    /* copy audio samples for DMA */
-    gwenesis_sound_submit();
-
-    if (gwenesis_show_debug_bar == 1) gwenesis_debug_bar();
-
-    if (drawFrame) common_ingame_overlay();
-
-    end_cycles = get_dwt_cycles();
-
-    /* VSYNC mode */
-    if (gwenesis_vsync_mode) {
-      /* Check if we are still in the same frame as at the beginning of the loop
-      * if it's different we are in overflow : skip next frame using (drawFrame = 0)
-      * otherwise we are in the same frame. wait the end of frame.
-      */ 
-      if (current_frame != frame_counter) {
-        overflow_count++;
-        drawFrame = 0;
-
-      } else {
-        lcd_swap();
-        drawFrame = 1;
-
-        while (is_lcd_swap_pending())
-        __NOP();
-
-      }
+    screen = lcd_get_active_buffer();
+    gwenesis_vdp_set_buffer(&screen[0]);
+    extern unsigned char gwenesis_vdp_regs[0x20];
+    extern unsigned int gwenesis_vdp_status;
+    extern unsigned int screen_width, screen_height;
+    static int hori_screen_offset, vert_screen_offset;
+    int hint_counter;
+    extern int hint_pending;
+    volatile unsigned int current_frame;
     
-    /* AUDIO SYNC mode */
-    /* default as Audio/Video are synchronized */
-    } else {
-
-      lcd_swap();
-      //  if (!common_emu_state.skip_frames) {
-      // odroid_audio_submit(pcm.buf, pcm.pos >> 1);
-      // handled in pcm_submit instead.
-      static dma_transfer_state_t last_dma_state = DMA_TRANSFER_STATE_HF;
-      //  for (uint8_t p = 0; p < common_emu_state.pause_frames + 1; p++) {
-      while (dma_state == last_dma_state) {
-        if (gwenesis_show_debug_bar)
-          __NOP();
-        else
-          cpumon_sleep();
-      }
-      last_dma_state = dma_state;
-
-
+    if (load_state) {
+      loadGwenesisState((unsigned char *)ACTIVE_FILE->save_address);
     }
-    // Get current line LCD position to check A/V synchronization
-    gwenesis_lcd_current_line = 0xFFFF & lcd_get_pixel_position();
 
-    /*  SYNC A/V */
-    if (gwenesis_lcd_current_line > GWENESIS_AUDIOSYNC_START_LCD_LINE) gwenesis_audio_pll_stepup();
-    if (gwenesis_lcd_current_line < GWENESIS_AUDIOSYNC_START_LCD_LINE) gwenesis_audio_pll_stepdown();
-    if (gwenesis_lcd_current_line == GWENESIS_AUDIOSYNC_START_LCD_LINE) gwenesis_audio_pll_center();
+    /* Start at the same time DMAs audio & video */
+    /* Audio period and Video period are the same (almost at least 1 hour) */
+    lcd_wait_for_vblank();
+    gwenesis_sound_start();
+    gwenesis_audio_pll_sync = 1;
 
-    /* get how cycles have been spent inside this loop */
-    loop_cycles = get_dwt_cycles();
+    // gwenesis_init_position = 0xFFFF & lcd_get_pixel_position();
+    while (true) {
 
-  } // end of loop
+      /* capture the frame processed by the LCD controller */
+      current_frame = frame_counter;
+
+      /* clear DWT counter used to monitor performances */
+      clear_dwt_cycles();
+
+      /* reset watchdog */
+      wdog_refresh();
+
+      /* hardware keys */
+      odroid_input_read_gamepad(&joystick);
+
+      /* SWAP TIME & PAUSE/SET for MARIO G&W device */
+      #if GNW_TARGET_MARIO != 0
+      unsigned int key_state = joystick.values[ODROID_INPUT_VOLUME];
+      joystick.values[ODROID_INPUT_VOLUME] = joystick.values[ODROID_INPUT_SELECT];
+      joystick.values[ODROID_INPUT_SELECT] = key_state;
+      #endif
+
+      common_emu_input_loop(&joystick, options);
+
+      // bool drawFrame =
+      common_emu_frame_loop();
+
+      /* Eumulator loop */
+      hint_counter = gwenesis_vdp_regs[10];
+
+      screen_height = REG1_PAL ? 240 : 224;
+      screen_width = REG12_MODE_H40 ? 320 : 256;
+      lines_per_frame = REG1_PAL ? LINES_PER_FRAME_PAL : LINES_PER_FRAME_NTSC;
+      vert_screen_offset = REG1_PAL ? 0 : 320 * (240 - 224) / 2;
+
+      hori_screen_offset = 0; //REG12_MODE_H40 ? 0 : (320 - 256) / 2;
+      screen = lcd_get_active_buffer();
+      gwenesis_vdp_set_buffer(&screen[vert_screen_offset + hori_screen_offset]);
+
+      gwenesis_vdp_render_config();
+
+      /* Reset the difference clocks and audio index */
+      system_clock = 0;
+      zclk = 0;
+
+      ym2612_clock = 0;
+      ym2612_index = 0;
+
+      sn76489_clock = 0;
+      sn76489_index = 0;
+
+    scan_line=0;
+
+    while (scan_line < lines_per_frame) {
+
+        /* CPUs */
+        m68k_run(system_clock + VDP_CYCLES_PER_LINE);
+        z80_run(system_clock + VDP_CYCLES_PER_LINE);
+
+        /* Audio */
+        /*  GWENESIS_AUDIO_ACCURATE:
+        *    =1 : cycle accurate mode. audio is refreshed when CPUs are performing a R/W access
+        *    =0 : line  accurate mode. audio is refreshed every lines.
+        */
+       if (GWENESIS_AUDIO_ACCURATE == 0) {
+          gwenesis_SN76489_run(system_clock + VDP_CYCLES_PER_LINE);
+          ym2612_run(system_clock + VDP_CYCLES_PER_LINE);
+        }
+
+        /* Video */
+        if (drawFrame)
+          gwenesis_vdp_render_line(scan_line); /* render scan_line */
+
+        // On these lines, the line counter interrupt is reloaded
+        if ((scan_line == 0) || (scan_line > screen_height)) {
+          //  if (REG0_LINE_INTERRUPT != 0)
+          //    printf("HINTERRUPT counter reloaded: (scan_line: %d, new
+          //    counter: %d)\n", scan_line, REG10_LINE_COUNTER);
+          hint_counter = REG10_LINE_COUNTER;
+        }
+
+        // interrupt line counter
+        if (--hint_counter < 0) {
+          if ((REG0_LINE_INTERRUPT != 0) && (scan_line <= screen_height)) {
+            hint_pending = 1;
+            // printf("Line int pending %d\n",scan_line);
+            if ((gwenesis_vdp_status & STATUS_VIRQPENDING) == 0)
+              m68k_update_irq(4);
+          }
+          hint_counter = REG10_LINE_COUNTER;
+        }
+
+        scan_line++;
+
+        // vblank begin at the end of last rendered line
+        if (scan_line == screen_height) {
+
+          if (REG1_VBLANK_INTERRUPT != 0) {
+            // printf("IRQ VBLANK\n");
+            gwenesis_vdp_status |= STATUS_VIRQPENDING;
+            m68k_set_irq(6);
+          }
+          z80_irq_line(1);
+        }
+        if (scan_line == (screen_height + 1)) {
+
+          z80_irq_line(0);
+        }
+
+        system_clock += VDP_CYCLES_PER_LINE;
+    }
+
+      /* Audio
+      * synchronize YM2612 and SN76489 to system_clock
+      * it completes the missing audio sample for accurate audio mode
+      */
+      if (GWENESIS_AUDIO_ACCURATE == 1) {
+        gwenesis_SN76489_run(system_clock);
+        ym2612_run(system_clock);
+      }
+
+      // reset m68k cycles to the begin of next frame cycle
+      m68k.cycles -= system_clock;
+
+      /* copy audio samples for DMA */
+      gwenesis_sound_submit();
+
+      if (gwenesis_show_debug_bar == 1)
+        gwenesis_debug_bar();
+
+      if (drawFrame)
+        common_ingame_overlay();
+
+      end_cycles = get_dwt_cycles();
+
+      /* VSYNC mode */
+      if (gwenesis_vsync_mode) {
+        /* Check if we are still in the same frame as at the beginning of the
+         * loop if it's different we are in overflow : skip next frame using
+         * (drawFrame = 0) otherwise we are in the same frame. wait the end of
+         * frame.
+         */
+        if (current_frame != frame_counter) {
+          overflow_count++;
+          drawFrame = 0;
+
+        } else {
+          lcd_swap();
+          drawFrame = 1;
+
+          while (is_lcd_swap_pending())
+            __NOP();
+        }
+
+        /* AUDIO SYNC mode */
+        /* default as Audio/Video are synchronized */
+      } else {
+
+        lcd_swap();
+        //  if (!common_emu_state.skip_frames) {
+        // odroid_audio_submit(pcm.buf, pcm.pos >> 1);
+        // handled in pcm_submit instead.
+        static dma_transfer_state_t last_dma_state = DMA_TRANSFER_STATE_HF;
+        //  for (uint8_t p = 0; p < common_emu_state.pause_frames + 1; p++) {
+        while (dma_state == last_dma_state) {
+          if (gwenesis_show_debug_bar)
+            __NOP();
+          else
+            cpumon_sleep();
+        }
+        last_dma_state = dma_state;
+      }
+      // Get current line LCD position to check A/V synchronization
+      gwenesis_lcd_current_line = 0xFFFF & lcd_get_pixel_position();
+
+      /*  SYNC A/V */
+      if (gwenesis_lcd_current_line > GWENESIS_AUDIOSYNC_START_LCD_LINE)
+        gwenesis_audio_pll_stepup();
+      if (gwenesis_lcd_current_line < GWENESIS_AUDIOSYNC_START_LCD_LINE)
+        gwenesis_audio_pll_stepdown();
+      if (gwenesis_lcd_current_line == GWENESIS_AUDIOSYNC_START_LCD_LINE)
+        gwenesis_audio_pll_center();
+
+      /* get how cycles have been spent inside this loop */
+      loop_cycles = get_dwt_cycles();
+
+    } // end of loop
 }

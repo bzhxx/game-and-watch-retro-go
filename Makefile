@@ -166,15 +166,16 @@ Core/Src/porting/gw/main_gw.c
 
 MD_C_SOURCES = \
 gwenesis/src/cpus/M68K/m68kcpu.c \
-gwenesis/src/cpus/M68K/m68kops.c \
-gwenesis/src/cpus/M68K/m68kinst.c \
 gwenesis/src/cpus/Z80/Z80.c \
 gwenesis/src/sound/z80inst.c \
 gwenesis/src/sound/ym2612.c \
+gwenesis/src/sound/gwenesis_sn76489.c \
 gwenesis/src/bus/gwenesis_bus.c \
 gwenesis/src/io/gwenesis_io.c \
 gwenesis/src/vdp/gwenesis_vdp_mem.c \
 gwenesis/src/vdp/gwenesis_vdp_gfx.c \
+gwenesis/src/savestate/gwenesis_savestate.c \
+gwenesis/src/porting/gwenesis/save_gwenesis.c \
 Core/Src/porting/gwenesis/main_gwenesis.c
 
 GNUBOY_C_INCLUDES +=  \
@@ -235,6 +236,7 @@ MD_C_INCLUDES +=  \
 -Igwenesis/src/bus \
 -Igwenesis/src/vdp \
 -Igwenesis/src/io \
+-Igwenesis/src/savestate \
 
 C_INCLUDES +=  \
 -ICore/Inc \

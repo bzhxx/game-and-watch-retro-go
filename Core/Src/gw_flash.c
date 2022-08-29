@@ -547,7 +547,7 @@ static void _OSPI_Erase(const flash_cmd_t *cmd, uint32_t address)
 
 void OSPI_ChipErase(void)
 {
-    DBG("CE\n");
+    //DBG("CE\n");
     _OSPI_Erase(CMD(CE), 0); // Chip Erase
 }
 
@@ -564,7 +564,7 @@ bool OSPI_Erase(uint32_t *address, uint32_t *size)
     uint32_t req_address = *address;
     uint32_t req_size = *size;
 
-    DBG("E 0x%lx %ld\n", req_address, req_size);
+   // DBG("E 0x%lx %ld\n", req_address, req_size);
 
     // Assumes that erase sizes are sorted: 4 > 3 > 2 > 1.
     // Assumes that erase sizes are powers of two.
@@ -587,7 +587,7 @@ bool OSPI_Erase(uint32_t *address, uint32_t *size)
             *size = req_size - erase_size;
             *address = req_address + erase_size;
 
-            DBG("Erasing block (%ld): 0x%08lx (%ld left)\n", erase_size, req_address, *size);
+           // DBG("Erasing block (%ld): 0x%08lx (%ld left)\n", erase_size, req_address, *size);
 
             OSPI_NOR_WriteEnable();
             _OSPI_Erase(erase_cmd[i], req_address);
@@ -618,7 +618,7 @@ void OSPI_PageProgram(uint32_t address,
 {
     assert(buffer_size <= 256);
 
-    DBG("PP cmd=%02X addr=0x%lx buf=%p len=%d\n", (*CMD(PP)).cmd, address, buffer, buffer_size);
+    //DBG("PP cmd=%02X addr=0x%lx buf=%p len=%d\n", (*CMD(PP)).cmd, address, buffer, buffer_size);
 
     OSPI_WriteBytes(CMD(PP), address, buffer, buffer_size);
 

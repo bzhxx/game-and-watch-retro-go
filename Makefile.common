@@ -20,7 +20,7 @@ LARGE_FLASH ?= 0
 EXTFLASH_OFFSET ?= 0
 
 # Configure Game & Watch target device mario|zelda
-GNW_TARGET ?= mario
+GNW_TARGET ?= zelda
 
 # Set the preprocessor options
 ifeq ($(GNW_TARGET),mario)
