@@ -12,10 +12,11 @@ extern DMA_HandleTypeDef hdma_sai1_a;
 #define BPP      4
 
 // Default to 50Hz as it results in more samples than at 60Hz
-#define AUDIO_SAMPLE_RATE   (48000)
-//#define AUDIO_BUFFER_LENGTH (AUDIO_SAMPLE_RATE / 50)
+// worst case is Genesis audio rate ~ 53kHz
+#define AUDIO_SAMPLE_RATE   (53000)
 
-#define AUDIO_BUFFER_LENGTH (4 * AUDIO_SAMPLE_RATE / 50)
+#define AUDIO_BUFFER_LENGTH (AUDIO_SAMPLE_RATE / 50)
+
 
 
 
